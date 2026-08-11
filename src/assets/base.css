@@ -1,6 +1,20 @@
+:root {
+  --color-ink: #0B0B0A;
+  --color-paper: #ECE7DD;
+  --color-ash: #8D8878;
+  --color-patina: #B08D57;
+  --color-hairline: #262420;
+  --color-surface: #131210;
+
+  --font-display: 'Fraunces', serif;
+  --font-body: 'IBM Plex Sans', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+}
+
 body {
   margin: 0;
   padding: 0;
-  background-color: #000;
-  color: #fff;
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-body);
 }

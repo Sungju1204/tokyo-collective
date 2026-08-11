@@ -31,7 +31,7 @@ onMounted(() => {
 
 <template>
   <div class="app-container">
-    <Header />
+    <Header :count="products.length" :loading="loading" :error="error" />
     <main class="main-content">
       <ProductGrid :products="products" :loading="loading" :error="error" />
     </main>

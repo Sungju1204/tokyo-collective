@@ -28,7 +28,7 @@ defineProps({
     </div>
     <div class="header-intro">
       <h1 class="headline">ARCHIVE — TOKYO VINTAGE, CURATED</h1>
-      <p v-if="!loading && !error" class="piece-count">{{ count }} pieces in rotation</p>
+      <p v-show="!loading && !error" class="piece-count">{{ count }} pieces in rotation</p>
     </div>
   </header>
 </template>

@@ -53,6 +53,7 @@ onMounted(() => {
 
 .main-content {
   flex: 1;
+  padding: 40px 0;
 }
 
 ::-webkit-scrollbar {

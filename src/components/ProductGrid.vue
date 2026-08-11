@@ -2,6 +2,7 @@
   <div class="product-grid">
     <div v-if="loading" class="loading">Loading products...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else-if="!products.length" class="empty">No products in the archive right now.</div>
     <div v-for="product in products" :key="product.id" class="product-item">
       <span class="catalog-number">No. {{ String(product.id).padStart(3, '0') }}</span>
       <div class="image-wrapper">
@@ -42,14 +43,16 @@ defineProps({
   width: 100%;
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  /* 1px gap over a hairline background draws grid lines without per-cell borders */
+  /* 1px gap; each .product-item draws its own hairline via box-shadow so
+     empty trailing cells (e.g. row 2 with 6 items in a 4-col grid) stay
+     ink-colored instead of painting a solid hairline slab. */
   gap: 1px;
-  background-color: var(--color-hairline);
+  background-color: var(--color-ink);
   box-sizing: border-box;
   min-height: 400px;
 }
 
-.loading, .error {
+.loading, .error, .empty {
   grid-column: 1 / -1;
   text-align: center;
   padding: 100px 0;
@@ -67,6 +70,9 @@ defineProps({
 
 .product-item {
   background-color: var(--color-ink);
+  /* Adjacent shadows coincide into a continuous 1px hairline across the
+     grid's gap, without painting empty trailing cells. */
+  box-shadow: 0 0 0 1px var(--color-hairline);
   display: flex;
   flex-direction: column;
   padding: 16px;
@@ -84,7 +90,7 @@ defineProps({
 }
 
 .product-item:hover .placeholder-img {
-  filter: brightness(1.15);
+  filter: brightness(1.6);
 }
 
 .catalog-number {
@@ -112,9 +118,11 @@ defineProps({
 }
 
 .product-initial {
-  color: rgba(0, 0, 0, 0.3);
+  /* --color-paper (#ECE7DD) at low alpha, so the initial reads against the
+     near-black placeholderColor values served by the API. */
+  color: rgba(236, 231, 221, 0.14);
   font-size: 5rem;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .product-info {

@@ -1,35 +1,45 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import Header from './components/Header.vue'
 import ProductGrid from './components/ProductGrid.vue'
 import Footer from './components/Footer.vue'
+
+const products = ref([])
+const loading = ref(true)
+const error = ref(null)
+
+const fetchProducts = async () => {
+  try {
+    loading.value = true
+    const response = await fetch('http://localhost:3000/api/products')
+    if (!response.ok) {
+      throw new Error('Failed to fetch products')
+    }
+    products.value = await response.json()
+  } catch (err) {
+    error.value = '상품 데이터를 불러오는 중 오류가 발생했습니다.'
+    console.error(err)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchProducts()
+})
 </script>
 
 <template>
   <div class="app-container">
     <Header />
     <main class="main-content">
-      <ProductGrid />
+      <ProductGrid :products="products" :loading="loading" :error="error" />
     </main>
     <Footer />
   </div>
 </template>
 
 <style>
-/* Global Styles */
-:root {
-  background-color: #000;
-}
-
-body {
-  margin: 0;
-  padding: 0;
-  background-color: #000;
-  color: #ccc;
-  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-}
-
 .app-container {
   max-width: 1440px;
   margin: 0 auto;
@@ -45,20 +55,19 @@ body {
   flex: 1;
 }
 
-/* Scrollbar for dark theme */
 ::-webkit-scrollbar {
   width: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #000;
+  background: var(--color-ink);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #333;
+  background: var(--color-hairline);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #444;
+  background: var(--color-patina);
 }
 </style>

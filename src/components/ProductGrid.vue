@@ -20,30 +20,19 @@
 </template>
 
 <script setup>
-import { ref, onMounted } from 'vue'
-
-const products = ref([])
-const loading = ref(true)
-const error = ref(null)
-
-const fetchProducts = async () => {
-  try {
-    loading.value = true
-    const response = await fetch('http://localhost:3000/api/products')
-    if (!response.ok) {
-      throw new Error('Failed to fetch products')
-    }
-    products.value = await response.json()
-  } catch (err) {
-    error.value = '상품 데이터를 불러오는 중 오류가 발생했습니다.'
-    console.error(err)
-  } finally {
-    loading.value = false
+defineProps({
+  products: {
+    type: Array,
+    default: () => []
+  },
+  loading: {
+    type: Boolean,
+    default: false
+  },
+  error: {
+    type: String,
+    default: null
   }
-}
-
-onMounted(() => {
-  fetchProducts()
 })
 </script>
 

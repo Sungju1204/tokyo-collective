@@ -72,7 +72,7 @@ function resetCategory() {
 }
 
 .logo {
-  height: 60px;
+  height: 120px;
   width: auto;
   cursor: pointer;
   transition: opacity 0.2s ease;
@@ -134,7 +134,7 @@ function resetCategory() {
   }
 
   .logo {
-    height: 48px;
+    height: 90px;
   }
 
   .header-bar {

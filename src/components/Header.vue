@@ -1,4 +1,6 @@
 <script setup>
+import logo from '../assets/logo.svg'
+
 const categories = ['Outer', 'Top', 'Bottom', 'Acc']
 
 const props = defineProps({
@@ -33,8 +35,10 @@ function resetCategory() {
 
 <template>
   <header class="header">
+    <div class="logo-container">
+      <img :src="logo" alt="Tokyo Collective" class="logo" @click="resetCategory" />
+    </div>
     <div class="header-bar">
-      <span class="wordmark" @click="resetCategory">TOKYO COLLECTIVE</span>
       <nav class="nav">
         <button
           v-for="category in categories"
@@ -58,22 +62,32 @@ function resetCategory() {
   padding: 32px 0 40px;
   border-bottom: 1px solid var(--color-hairline);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.logo-container {
+  margin-bottom: 32px;
+}
+
+.logo {
+  height: 60px;
+  width: auto;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.logo:hover {
+  opacity: 0.8;
 }
 
 .header-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   margin-bottom: 40px;
-}
-
-.wordmark {
-  font-family: var(--font-display);
-  font-size: 1.4rem;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  color: var(--color-paper);
-  cursor: pointer;
+  width: 100%;
 }
 
 .nav {
@@ -102,6 +116,11 @@ function resetCategory() {
   color: var(--color-patina);
 }
 
+.header-intro {
+  text-align: center;
+  width: 100%;
+}
+
 .piece-count {
   font-family: var(--font-mono);
   font-size: 0.75rem;
@@ -110,9 +129,17 @@ function resetCategory() {
 }
 
 @media (max-width: 768px) {
+  .logo-container {
+    margin-bottom: 24px;
+  }
+
+  .logo {
+    height: 48px;
+  }
+
   .header-bar {
     flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
     gap: 16px;
   }
 

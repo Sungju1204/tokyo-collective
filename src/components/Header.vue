@@ -36,14 +36,14 @@ function resetCategory() {
     <div class="header-bar">
       <span class="wordmark" @click="resetCategory">TOKYO COLLECTIVE</span>
       <nav class="nav">
-        <a
+        <button
           v-for="category in categories"
           :key="category"
-          href="#"
+          type="button"
           class="nav-link"
           :class="{ active: activeCategory === category }"
-          @click.prevent="selectCategory(category)"
-        >{{ category }}</a>
+          @click="selectCategory(category)"
+        >{{ category }}</button>
       </nav>
     </div>
     <div class="header-intro">
@@ -83,6 +83,11 @@ function resetCategory() {
 }
 
 .nav-link {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
   color: var(--color-ash);
   text-decoration: none;
   font-family: var(--font-body);

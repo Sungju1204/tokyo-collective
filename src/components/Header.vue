@@ -1,5 +1,5 @@
 <script setup>
-import logo from '../assets/logo.svg'
+import logo from '../assets/logo.png'
 
 const categories = ['Outer', 'Top', 'Bottom', 'Acc']
 

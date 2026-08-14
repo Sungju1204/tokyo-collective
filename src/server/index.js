@@ -54,19 +54,32 @@ app.get('/api/products', (req, res) => {
 // Create new order
 app.post('/api/orders', (req, res) => {
   try {
-    const { customer, items, totalPrice, status } = req.body;
+    const { customer, items } = req.body;
 
-    if (!customer || !items || totalPrice === undefined) {
+    if (!customer || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    // Never trust client-supplied price/status: recompute from the server-side catalog.
+    const resolvedItems = [];
+    let totalPrice = 0;
+    for (const item of items) {
+      const product = products.find(p => p.id === item.id);
+      const quantity = Number(item.quantity);
+      if (!product || !Number.isInteger(quantity) || quantity <= 0) {
+        return res.status(400).json({ error: `Invalid item: ${item?.id}` });
+      }
+      resolvedItems.push({ id: product.id, name: product.name, price: product.price, quantity });
+      totalPrice += product.price * quantity;
     }
 
     const orderId = `ORD-${Date.now()}`;
     const newOrder = {
       id: orderId,
       customer,
-      items,
+      items: resolvedItems,
       totalPrice,
-      status: status || 'pending',
+      status: 'pending',
       createdAt: new Date().toISOString(),
       paymentStatus: 'pending'
     };
@@ -97,7 +110,9 @@ app.get('/api/orders', (req, res) => {
   res.json(orders);
 });
 
-// Update order (for payment status, etc.)
+// Update order (customer-cancellable status only; paymentStatus/totalPrice are server-controlled)
+const CANCELLABLE_STATUSES = ['pending', 'cancelled'];
+
 app.patch('/api/orders/:id', (req, res) => {
   const order = orders.find(o => o.id === req.params.id);
 
@@ -105,7 +120,12 @@ app.patch('/api/orders/:id', (req, res) => {
     return res.status(404).json({ error: 'Order not found' });
   }
 
-  Object.assign(order, req.body);
+  const { status } = req.body;
+  if (!CANCELLABLE_STATUSES.includes(status)) {
+    return res.status(400).json({ error: `status must be one of: ${CANCELLABLE_STATUSES.join(', ')}` });
+  }
+
+  order.status = status;
   saveOrders(orders);
 
   res.json(order);

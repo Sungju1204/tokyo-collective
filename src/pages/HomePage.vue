@@ -5,9 +5,11 @@ import { useCartStore } from '../stores/cart'
 import Header from '../components/Header.vue'
 import ProductGrid from '../components/ProductGrid.vue'
 import Footer from '../components/Footer.vue'
+import CartNotification from '../components/CartNotification.vue'
 
 const router = useRouter()
 const cartStore = useCartStore()
+const cartNotification = ref(null)
 
 const products = ref([])
 const loading = ref(true)
@@ -43,8 +45,7 @@ function handleSelectCategory(category) {
 
 function handleAddToCart(product) {
   cartStore.addToCart(product)
-  // Show feedback (could add toast notification here)
-  alert(`${product.name}이 장바구니에 담겼습니다!`)
+  cartNotification.value.show(product.name)
 }
 
 onMounted(() => {
@@ -75,6 +76,7 @@ onMounted(() => {
       </button>
     </div>
     <Footer />
+    <CartNotification ref="cartNotification" />
   </div>
 </template>
 

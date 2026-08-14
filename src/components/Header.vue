@@ -147,14 +147,13 @@ function goToCart() {
 }
 
 .cart-button {
-  position: relative;
   background: none;
   border: none;
   cursor: pointer;
   padding: 0;
   display: flex;
   align-items: center;
-  justify-content: center;
+  gap: 8px;
   transition: all 0.2s ease;
 }
 
@@ -173,20 +172,18 @@ function goToCart() {
 }
 
 .cart-badge {
-  position: absolute;
-  top: -8px;
-  right: -8px;
   background: var(--color-patina);
   color: var(--color-ink);
   font-family: var(--font-body);
   font-size: 0.65rem;
   font-weight: 600;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 50%;
+  flex-shrink: 0;
 }
 
 @media (max-width: 768px) {

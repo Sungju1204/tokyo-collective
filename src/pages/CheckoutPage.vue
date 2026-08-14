@@ -11,7 +11,9 @@ const selectedCategory = ref(null)
 
 const loading = ref(false)
 const orderPlaced = ref(false)
+const paymentProcessing = ref(false)
 const orderId = ref(null)
+const paymentMethod = ref('card') // 'card', 'transfer', 'phone'
 
 const formData = ref({
   customerName: '',
@@ -60,18 +62,37 @@ async function submitOrder() {
 
     const order = await response.json()
     orderId.value = order.id
-    orderPlaced.value = true
-    cartStore.clearCart()
 
-    // Redirect to home after 3 seconds
-    setTimeout(() => {
-      router.push('/')
-    }, 3000)
+    // Process payment
+    await processPayment()
   } catch (err) {
     console.error('Order error:', err)
     alert('주문 처리 중 오류가 발생했습니다.')
   } finally {
     loading.value = false
+  }
+}
+
+async function processPayment() {
+  paymentProcessing.value = true
+
+  try {
+    // Simulate payment processing with delay
+    await new Promise(resolve => setTimeout(resolve, 1500))
+
+    // Payment completed
+    orderPlaced.value = true
+    cartStore.clearCart()
+
+    // Redirect to home after 4 seconds
+    setTimeout(() => {
+      router.push('/')
+    }, 4000)
+  } catch (err) {
+    console.error('Payment error:', err)
+    alert('결제 처리 중 오류가 발생했습니다.')
+  } finally {
+    paymentProcessing.value = false
   }
 }
 
@@ -181,12 +202,31 @@ function handleSelectCategory(category) {
               ></textarea>
             </div>
 
+            <!-- Payment Method Selection -->
+            <div class="payment-section">
+              <h3 class="section-title">결제 방법</h3>
+              <div class="payment-methods">
+                <label class="payment-option">
+                  <input type="radio" v-model="paymentMethod" value="card" />
+                  <span class="payment-label">신용카드</span>
+                </label>
+                <label class="payment-option">
+                  <input type="radio" v-model="paymentMethod" value="transfer" />
+                  <span class="payment-label">계좌이체</span>
+                </label>
+                <label class="payment-option">
+                  <input type="radio" v-model="paymentMethod" value="phone" />
+                  <span class="payment-label">휴대폰 결제</span>
+                </label>
+              </div>
+            </div>
+
             <div class="form-actions">
               <button type="button" class="btn btn-secondary" @click="goBack" :disabled="loading">
                 이전으로
               </button>
               <button type="submit" class="btn btn-primary" :disabled="loading">
-                {{ loading ? '주문 처리 중...' : '주문하기' }}
+                {{ loading ? '결제 처리 중...' : '결제하기' }}
               </button>
             </div>
           </form>
@@ -194,9 +234,26 @@ function handleSelectCategory(category) {
 
         <div v-else class="order-success">
           <div class="success-message">
-            <h3>주문이 완료되었습니다!</h3>
-            <p class="order-id">주문번호: {{ orderId }}</p>
-            <p class="success-text">감사합니다. 곧 홈페이지로 이동합니다.</p>
+            <div class="success-icon">✓</div>
+            <h2 class="success-title">결제가 완료되었습니다!</h2>
+            <div class="order-details">
+              <div class="detail-item">
+                <span class="detail-label">주문번호</span>
+                <span class="detail-value">{{ orderId }}</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">결제금액</span>
+                <span class="detail-value">{{ cartStore.totalPrice.toLocaleString() }}원</span>
+              </div>
+              <div class="detail-item">
+                <span class="detail-label">결제방법</span>
+                <span class="detail-value">
+                  {{ paymentMethod === 'card' ? '신용카드' : paymentMethod === 'transfer' ? '계좌이체' : '휴대폰 결제' }}
+                </span>
+              </div>
+            </div>
+            <p class="success-text">주문이 확인되면 배송 준비를 시작하겠습니다.</p>
+            <p class="redirect-text">곧 홈페이지로 이동합니다...</p>
           </div>
         </div>
       </div>
@@ -399,36 +456,136 @@ function handleSelectCategory(category) {
   color: var(--color-ink);
 }
 
+.payment-section {
+  border-top: 1px solid var(--color-hairline);
+  padding-top: 24px;
+  margin-top: 24px;
+}
+
+.payment-methods {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.payment-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-hairline);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.payment-option:hover {
+  background: rgba(139, 131, 122, 0.05);
+  border-color: var(--color-patina);
+}
+
+.payment-option input[type="radio"] {
+  cursor: pointer;
+  accent-color: var(--color-ink);
+}
+
+.payment-label {
+  font-family: var(--font-body);
+  font-size: 0.9rem;
+  color: var(--color-paper);
+  cursor: pointer;
+  flex: 1;
+}
+
 .order-success {
   text-align: center;
-  padding: 80px 20px;
+  padding: 60px 20px;
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .success-message {
-  max-width: 400px;
+  max-width: 500px;
   margin: 0 auto;
 }
 
-.success-message h3 {
-  font-family: var(--font-display);
-  font-size: 1.8rem;
-  font-weight: 600;
-  color: var(--color-paper);
-  margin: 0 0 16px;
+.success-icon {
+  font-size: 4rem;
+  color: var(--color-patina);
+  margin-bottom: 20px;
+  animation: scaleIn 0.6s ease-out;
 }
 
-.order-id {
-  font-family: var(--font-mono);
-  font-size: 0.9rem;
+.success-title {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--color-paper);
+  margin: 0 0 32px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.order-details {
+  border: 1px solid var(--color-hairline);
+  padding: 24px;
+  margin: 32px 0;
+  background: rgba(139, 131, 122, 0.02);
+  border-radius: 4px;
+}
+
+.detail-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  color: var(--color-paper);
+}
+
+.detail-item:not(:last-child) {
+  border-bottom: 1px solid var(--color-hairline);
+}
+
+.detail-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   color: var(--color-ash);
-  margin: 0 0 12px;
+  font-size: 0.8rem;
+}
+
+.detail-value {
+  font-weight: 600;
+  text-align: right;
 }
 
 .success-text {
   font-family: var(--font-body);
   font-size: 1rem;
   color: var(--color-paper);
+  margin: 0 0 12px;
+}
+
+.redirect-text {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--color-ash);
   margin: 0;
+}
+
+@keyframes scaleIn {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
 }
 
 @media (max-width: 768px) {

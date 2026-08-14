@@ -1,6 +1,8 @@
 <script setup>
+import { useRouter } from 'vue-router'
 import logo from '../assets/logo.png'
 
+const router = useRouter()
 const categories = ['Outer', 'Top', 'Bottom', 'Acc']
 
 const props = defineProps({
@@ -19,6 +21,10 @@ const props = defineProps({
   activeCategory: {
     type: String,
     default: null
+  },
+  cartCount: {
+    type: Number,
+    default: 0
   }
 })
 
@@ -30,6 +36,10 @@ function selectCategory(category) {
 
 function resetCategory() {
   emit('select-category', null)
+}
+
+function goToCart() {
+  router.push('/cart')
 }
 </script>
 
@@ -49,6 +59,10 @@ function resetCategory() {
           @click="selectCategory(category)"
         >{{ category }}</button>
       </nav>
+      <button class="cart-button" @click="goToCart">
+        <span class="cart-icon">🛍</span>
+        <span v-if="cartCount > 0" class="cart-badge">{{ cartCount }}</span>
+      </button>
     </div>
     <div class="header-intro">
       <p v-show="!loading && !error" class="piece-count">{{ count }} pieces in rotation</p>
@@ -85,7 +99,7 @@ function resetCategory() {
 .header-bar {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
   margin-bottom: 40px;
   width: 100%;
 }
@@ -126,6 +140,45 @@ function resetCategory() {
   font-size: 0.75rem;
   color: var(--color-ash);
   margin: 0;
+}
+
+.cart-button {
+  position: relative;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.cart-icon {
+  font-size: 1.4rem;
+  display: block;
+  transition: transform 0.2s ease;
+}
+
+.cart-button:hover .cart-icon {
+  transform: scale(1.1);
+}
+
+.cart-badge {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  background: var(--color-patina);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  font-size: 0.65rem;
+  font-weight: 600;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
 }
 
 @media (max-width: 768px) {

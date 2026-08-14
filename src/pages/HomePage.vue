@@ -60,6 +60,7 @@ onMounted(() => {
       :loading="loading"
       :error="error"
       :active-category="selectedCategory"
+      :cart-count="cartStore.totalItems"
       @select-category="handleSelectCategory"
     />
     <main class="main-content">
@@ -70,11 +71,6 @@ onMounted(() => {
         @add-to-cart="handleAddToCart"
       />
     </main>
-    <div class="checkout-buttons">
-      <button v-if="cartStore.totalItems > 0" class="btn btn-primary" @click="router.push('/cart')">
-        장바구니 ({{ cartStore.totalItems }})
-      </button>
-    </div>
     <Footer />
     <CartNotification ref="cartNotification" />
   </div>
@@ -95,35 +91,6 @@ onMounted(() => {
 .main-content {
   flex: 1;
   padding: 40px 0;
-}
-
-.checkout-buttons {
-  padding: 20px 0;
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  border-top: 1px solid var(--color-hairline);
-}
-
-.btn {
-  padding: 12px 24px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-family: var(--font-body);
-}
-
-.btn-primary {
-  background: var(--color-ink);
-  color: var(--color-paper);
-}
-
-.btn-primary:hover {
-  opacity: 0.8;
 }
 
 ::-webkit-scrollbar {

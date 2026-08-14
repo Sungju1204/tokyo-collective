@@ -2,9 +2,9 @@
   <footer class="footer">
     <p class="copyright">&copy; TOKYO COLLECTIVE ALL RIGHTS RESERVED.</p>
     <div class="social-links">
-      <a href="#" class="footer-link">Instagram</a>
-      <a href="#" class="footer-link">Fruits Family</a>
-      <a href="#" class="footer-link">Bunjang</a>
+      <a href="https://www.instagram.com/dokyo.archive?igsh=MXg5dmxxY3c2b3By&utm_source=qr" target="_blank" rel="noopener noreferrer" class="footer-link">Instagram</a>
+      <a href="https://seller.fruitsfamily.com/Agm2/gjedzjzz" target="_blank" rel="noopener noreferrer" class="footer-link">Fruits Family</a>
+      <a href="https://go.bgzt.shop/l9hz68" target="_blank" rel="noopener noreferrer" class="footer-link">Bunjang</a>
     </div>
   </footer>
 </template>

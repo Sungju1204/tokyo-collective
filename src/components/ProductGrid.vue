@@ -3,7 +3,7 @@
     <div v-if="loading" class="loading">Loading products...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="!products.length" class="empty">No products in the archive right now.</div>
-    <div v-for="product in products" :key="product.id" class="product-item">
+    <div v-for="product in products" :key="product.id" class="product-item" :class="{ 'is-sold-out': product.soldOut }">
       <span class="catalog-number">No. {{ String(product.id).padStart(3, '0') }}</span>
       <div class="image-wrapper">
         <div class="placeholder-img" :style="{ backgroundColor: product.placeholderColor }">
@@ -16,13 +16,20 @@
           ₩{{ product.price.toLocaleString() }}
           <span v-if="product.soldOut" class="sold-out">SOLD</span>
         </p>
+        <button
+          v-if="!product.soldOut"
+          class="btn-add-to-cart"
+          @click="handleAddToCart(product)"
+        >
+          장바구니 담기
+        </button>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   products: {
     type: Array,
     default: () => []
@@ -36,6 +43,14 @@ defineProps({
     default: null
   }
 })
+
+const emit = defineEmits(['add-to-cart'])
+
+function handleAddToCart(product) {
+  if (!product.soldOut) {
+    emit('add-to-cart', product)
+  }
+}
 </script>
 
 <style scoped>
@@ -161,5 +176,38 @@ defineProps({
   text-transform: uppercase;
   font-size: 0.7rem;
   text-decoration: none;
+}
+
+.product-item.is-sold-out {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-add-to-cart {
+  margin-top: 12px;
+  padding: 8px 12px;
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border: 1px solid var(--color-hairline);
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-add-to-cart:hover {
+  background: var(--color-paper);
+  color: var(--color-ink);
+  border-color: var(--color-paper);
+}
+
+@media (max-width: 768px) {
+  .btn-add-to-cart {
+    font-size: 0.65rem;
+    padding: 6px 10px;
+  }
 }
 </style>

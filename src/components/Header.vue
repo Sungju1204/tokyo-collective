@@ -1,5 +1,7 @@
 <script setup>
-defineProps({
+const categories = ['Outer', 'Top', 'Bottom', 'Acc']
+
+const props = defineProps({
   count: {
     type: Number,
     default: 0
@@ -11,19 +13,37 @@ defineProps({
   error: {
     type: String,
     default: null
+  },
+  activeCategory: {
+    type: String,
+    default: null
   }
 })
+
+const emit = defineEmits(['select-category'])
+
+function selectCategory(category) {
+  emit('select-category', props.activeCategory === category ? null : category)
+}
+
+function resetCategory() {
+  emit('select-category', null)
+}
 </script>
 
 <template>
   <header class="header">
     <div class="header-bar">
-      <span class="wordmark">TOKYO COLLECTIVE</span>
+      <span class="wordmark" @click="resetCategory">TOKYO COLLECTIVE</span>
       <nav class="nav">
-        <a href="#" class="nav-link">Outer</a>
-        <a href="#" class="nav-link">Top</a>
-        <a href="#" class="nav-link">Bottom</a>
-        <a href="#" class="nav-link">Acc</a>
+        <a
+          v-for="category in categories"
+          :key="category"
+          href="#"
+          class="nav-link"
+          :class="{ active: activeCategory === category }"
+          @click.prevent="selectCategory(category)"
+        >{{ category }}</a>
       </nav>
     </div>
     <div class="header-intro">
@@ -54,6 +74,7 @@ defineProps({
   font-weight: 600;
   letter-spacing: 0.02em;
   color: var(--color-paper);
+  cursor: pointer;
 }
 
 .nav {
@@ -72,7 +93,8 @@ defineProps({
   transition: color 0.2s ease;
 }
 
-.nav-link:hover {
+.nav-link:hover,
+.nav-link.active {
   color: var(--color-patina);
 }
 

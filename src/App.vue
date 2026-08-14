@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import Header from './components/Header.vue'
 import ProductGrid from './components/ProductGrid.vue'
 import Footer from './components/Footer.vue'
@@ -7,6 +7,14 @@ import Footer from './components/Footer.vue'
 const products = ref([])
 const loading = ref(true)
 const error = ref(null)
+const selectedCategory = ref(null)
+
+const filteredProducts = computed(() => {
+  if (selectedCategory.value === null) {
+    return products.value
+  }
+  return products.value.filter(product => product.category === selectedCategory.value)
+})
 
 const fetchProducts = async () => {
   try {
@@ -24,6 +32,10 @@ const fetchProducts = async () => {
   }
 }
 
+function handleSelectCategory(category) {
+  selectedCategory.value = category
+}
+
 onMounted(() => {
   fetchProducts()
 })
@@ -31,9 +43,15 @@ onMounted(() => {
 
 <template>
   <div class="app-container">
-    <Header :count="products.length" :loading="loading" :error="error" />
+    <Header
+      :count="filteredProducts.length"
+      :loading="loading"
+      :error="error"
+      :active-category="selectedCategory"
+      @select-category="handleSelectCategory"
+    />
     <main class="main-content">
-      <ProductGrid :products="products" :loading="loading" :error="error" />
+      <ProductGrid :products="filteredProducts" :loading="loading" :error="error" />
     </main>
     <Footer />
   </div>

@@ -25,6 +25,10 @@ const props = defineProps({
   cartCount: {
     type: Number,
     default: 0
+  },
+  showPieceCount: {
+    type: Boolean,
+    default: true
   }
 })
 
@@ -64,7 +68,7 @@ function goToCart() {
         <span v-if="cartCount > 0" class="cart-badge">{{ cartCount }}</span>
       </button>
     </div>
-    <div class="header-intro">
+    <div v-if="showPieceCount" class="header-intro">
       <p v-show="!loading && !error" class="piece-count">{{ count }} pieces in rotation</p>
     </div>
   </header>

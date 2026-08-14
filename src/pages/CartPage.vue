@@ -32,6 +32,7 @@ function handleSelectCategory(category) {
       :error="null"
       :active-category="selectedCategory"
       :cart-count="cartStore.totalItems"
+      :show-piece-count="false"
       @select-category="handleSelectCategory"
     />
     <main class="main-content">

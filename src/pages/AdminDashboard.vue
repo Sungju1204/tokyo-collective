@@ -1,8 +1,6 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
-import Header from '../components/Header.vue'
-import Footer from '../components/Footer.vue'
 
 const router = useRouter()
 const orders = ref([])
@@ -76,8 +74,6 @@ onMounted(() => {
 
 <template>
   <div class="admin-container">
-    <Header :count="0" :loading="false" :error="null" :show-piece-count="false" />
-
     <main class="admin-content">
       <div class="admin-header">
         <h1>📦 배송 관리 대시보드</h1>
@@ -183,8 +179,6 @@ onMounted(() => {
         </div>
       </div>
     </main>
-
-    <Footer />
   </div>
 </template>
 

@@ -84,8 +84,6 @@ function goBack() {
     <Header :count="0" :loading="false" :error="null" />
     <main class="main-content">
       <div class="checkout-container">
-        <h2 class="page-title">주문 확인</h2>
-
         <div v-if="!orderPlaced" class="checkout-content">
           <!-- Order Summary -->
           <div class="order-summary">

@@ -23,8 +23,6 @@ function goHome() {
     <Header :count="0" :loading="false" :error="null" />
     <main class="main-content">
       <div class="cart-container">
-        <h2 class="page-title">장바구니</h2>
-
         <div v-if="cartStore.items.length === 0" class="empty-cart">
           <p class="empty-message">장바구니가 비어있습니다.</p>
           <button class="btn btn-primary" @click="goHome">계속 쇼핑하기</button>

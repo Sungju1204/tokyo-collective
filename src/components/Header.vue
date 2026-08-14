@@ -60,7 +60,7 @@ function goToCart() {
         >{{ category }}</button>
       </nav>
       <button class="cart-button" @click="goToCart">
-        <span class="cart-icon">🛍</span>
+        <span class="cart-text">장바구니</span>
         <span v-if="cartCount > 0" class="cart-badge">{{ cartCount }}</span>
       </button>
     </div>
@@ -154,14 +154,18 @@ function goToCart() {
   transition: all 0.2s ease;
 }
 
-.cart-icon {
-  font-size: 1.4rem;
-  display: block;
-  transition: transform 0.2s ease;
+.cart-text {
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-ash);
+  transition: color 0.2s ease;
 }
 
-.cart-button:hover .cart-icon {
-  transform: scale(1.1);
+.cart-button:hover .cart-text {
+  color: var(--color-patina);
 }
 
 .cart-badge {

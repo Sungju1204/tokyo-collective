@@ -1,136 +1,269 @@
-import express from 'express';
-import cors from 'cors';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import express from 'express'
+import cors from 'cors'
+import db, { initializeDatabase } from './db.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const app = express();
-const port = 3000;
+const app = express()
+const port = 3000
 
-app.use(cors());
-app.use(express.json());
+app.use(cors())
+app.use(express.json())
 
-const products = [
-  { id: 1, name: 'VINTAGE CARGO PANTS', price: 89000, soldOut: false, placeholderColor: '#1a1a1a', category: 'Bottom' },
-  { id: 2, name: 'SUPREME LOGO TEE', price: 125000, soldOut: true, placeholderColor: '#222', category: 'Top' },
-  { id: 3, name: 'OVERSIZED KNIT SWEATER', price: 158000, soldOut: false, placeholderColor: '#151515', category: 'Top' },
-  { id: 4, name: '90s DENIM JACKET', price: 210000, soldOut: false, placeholderColor: '#1d1d1d', category: 'Outer' },
-  { id: 5, name: 'LEATHER MESSENGER BAG', price: 175000, soldOut: true, placeholderColor: '#111', category: 'Acc' },
-  { id: 6, name: 'GRAFFITI PRINT HOODIE', price: 95000, soldOut: false, placeholderColor: '#1f1f1f', category: 'Outer' }
-];
+// Initialize database
+initializeDatabase()
 
-const ordersFilePath = path.join(__dirname, 'orders.json');
-
-// Load orders from file
-function loadOrders() {
-  try {
-    if (fs.existsSync(ordersFilePath)) {
-      const data = fs.readFileSync(ordersFilePath, 'utf-8');
-      return JSON.parse(data);
-    }
-  } catch (err) {
-    console.error('Error loading orders:', err);
-  }
-  return [];
-}
-
-// Save orders to file
-function saveOrders(orders) {
-  try {
-    fs.writeFileSync(ordersFilePath, JSON.stringify(orders, null, 2));
-  } catch (err) {
-    console.error('Error saving orders:', err);
-  }
-}
-
-let orders = loadOrders();
+// ==================== PRODUCTS ====================
 
 // Get all products
 app.get('/api/products', (req, res) => {
-  res.json(products);
-});
+  try {
+    const products = db.prepare('SELECT * FROM products').all()
+    const formattedProducts = products.map(p => ({
+      ...p,
+      soldOut: p.stock <= 0 || p.soldOut === 1
+    }))
+    res.json(formattedProducts)
+  } catch (err) {
+    console.error('Error fetching products:', err)
+    res.status(500).json({ error: 'Failed to fetch products' })
+  }
+})
+
+// Get product by ID
+app.get('/api/products/:id', (req, res) => {
+  try {
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(req.params.id)
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' })
+    }
+    product.soldOut = product.stock <= 0 || product.soldOut === 1
+    res.json(product)
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch product' })
+  }
+})
+
+// ==================== SHIPPING METHODS ====================
+
+// Get all shipping methods
+app.get('/api/shipping-methods', (req, res) => {
+  try {
+    const methods = db.prepare('SELECT * FROM shipping_methods').all()
+    res.json(methods)
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch shipping methods' })
+  }
+})
+
+// ==================== ORDERS ====================
 
 // Create new order
 app.post('/api/orders', (req, res) => {
   try {
-    const { customer, items } = req.body;
+    const { customer, items, totalPrice, status } = req.body
 
-    if (!customer || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'Missing required fields' });
+    // Validation
+    if (!customer || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Missing required fields' })
     }
 
-    // Never trust client-supplied price/status: recompute from the server-side catalog.
-    const resolvedItems = [];
-    let totalPrice = 0;
+    // Validate and calculate actual price
+    const insertStmt = db.prepare('SELECT * FROM products WHERE id = ?')
+    const resolvedItems = []
+    let calculatedPrice = 0
+
     for (const item of items) {
-      const product = products.find(p => p.id === item.id);
-      const quantity = Number(item.quantity);
-      if (!product || !Number.isInteger(quantity) || quantity <= 0) {
-        return res.status(400).json({ error: `Invalid item: ${item?.id}` });
+      const product = insertStmt.get(item.id)
+      if (!product) {
+        return res.status(400).json({ error: `Product ${item.id} not found` })
       }
-      resolvedItems.push({ id: product.id, name: product.name, price: product.price, quantity });
-      totalPrice += product.price * quantity;
+
+      // Check stock
+      if (product.stock < item.quantity) {
+        return res.status(400).json({
+          error: `Insufficient stock for ${product.name}. Available: ${product.stock}, Requested: ${item.quantity}`
+        })
+      }
+
+      resolvedItems.push({
+        id: product.id,
+        name: product.name,
+        price: product.price,
+        quantity: item.quantity
+      })
+
+      calculatedPrice += product.price * item.quantity
     }
 
-    const orderId = `ORD-${Date.now()}`;
-    const newOrder = {
-      id: orderId,
-      customer,
-      items: resolvedItems,
-      totalPrice,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      paymentStatus: 'pending'
-    };
+    // Begin transaction
+    const orderId = `ORD-${Date.now()}`
 
-    orders.push(newOrder);
-    saveOrders(orders);
+    // Insert order
+    const insertOrder = db.prepare(`
+      INSERT INTO orders (
+        id, customer_name, customer_phone, customer_email,
+        customer_address, customer_zipcode, customer_memo,
+        items_json, total_price, status, payment_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `)
 
-    res.status(201).json(newOrder);
+    insertOrder.run(
+      orderId,
+      customer.name,
+      customer.phone,
+      customer.email,
+      customer.address,
+      customer.zipCode || '',
+      customer.memo || '',
+      JSON.stringify(resolvedItems),
+      calculatedPrice,
+      status || 'pending',
+      'pending'
+    )
+
+    // Deduct stock for each item
+    const updateStock = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ?')
+    for (const item of resolvedItems) {
+      updateStock.run(item.quantity, item.id)
+    }
+
+    // Add status history
+    const insertHistory = db.prepare(`
+      INSERT INTO order_status_history (order_id, status, notes)
+      VALUES (?, ?, ?)
+    `)
+    insertHistory.run(orderId, 'pending', '주문 생성됨')
+
+    // Fetch and return the created order
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)
+    order.items = JSON.parse(order.items_json)
+    delete order.items_json
+
+    res.status(201).json(order)
   } catch (err) {
-    console.error('Order creation error:', err);
-    res.status(500).json({ error: 'Failed to create order' });
+    console.error('Order creation error:', err)
+    res.status(500).json({ error: 'Failed to create order' })
   }
-});
-
-// Get order by ID
-app.get('/api/orders/:id', (req, res) => {
-  const order = orders.find(o => o.id === req.params.id);
-
-  if (!order) {
-    return res.status(404).json({ error: 'Order not found' });
-  }
-
-  res.json(order);
-});
+})
 
 // Get all orders
 app.get('/api/orders', (req, res) => {
-  res.json(orders);
-});
+  try {
+    const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all()
+    const formatted = orders.map(order => ({
+      ...order,
+      items: JSON.parse(order.items_json)
+    }))
+    res.json(formatted)
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch orders' })
+  }
+})
 
-// Update order (customer-cancellable status only; paymentStatus/totalPrice are server-controlled)
-const CANCELLABLE_STATUSES = ['pending', 'cancelled'];
+// Get order by ID
+app.get('/api/orders/:id', (req, res) => {
+  try {
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' })
+    }
 
+    order.items = JSON.parse(order.items_json)
+    delete order.items_json
+
+    // Get status history
+    const statusHistory = db.prepare(`
+      SELECT status, timestamp, notes FROM order_status_history
+      WHERE order_id = ?
+      ORDER BY timestamp ASC
+    `).all(req.params.id)
+
+    res.json({ ...order, statusHistory })
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch order' })
+  }
+})
+
+// Update order status
 app.patch('/api/orders/:id', (req, res) => {
-  const order = orders.find(o => o.id === req.params.id);
+  try {
+    const { status, notes, trackingNumber } = req.body
+    const orderId = req.params.id
 
-  if (!order) {
-    return res.status(404).json({ error: 'Order not found' });
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)
+    if (!order) {
+      return res.status(404).json({ error: 'Order not found' })
+    }
+
+    // Valid status transitions
+    const validStatuses = ['pending', 'confirmed', 'shipped', 'delivered', 'cancelled']
+    if (status && !validStatuses.includes(status)) {
+      return res.status(400).json({
+        error: `Invalid status. Valid statuses: ${validStatuses.join(', ')}`
+      })
+    }
+
+    // Update order
+    const updateOrder = db.prepare(`
+      UPDATE orders
+      SET status = ?, tracking_number = ?, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `)
+
+    updateOrder.run(status || order.status, trackingNumber || order.tracking_number, orderId)
+
+    // Add to status history
+    const insertHistory = db.prepare(`
+      INSERT INTO order_status_history (order_id, status, notes)
+      VALUES (?, ?, ?)
+    `)
+    insertHistory.run(orderId, status || order.status, notes || '')
+
+    // Return updated order
+    const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(orderId)
+    updatedOrder.items = JSON.parse(updatedOrder.items_json)
+    delete updatedOrder.items_json
+
+    res.json(updatedOrder)
+  } catch (err) {
+    console.error('Order update error:', err)
+    res.status(500).json({ error: 'Failed to update order' })
   }
+})
 
-  const { status } = req.body;
-  if (!CANCELLABLE_STATUSES.includes(status)) {
-    return res.status(400).json({ error: `status must be one of: ${CANCELLABLE_STATUSES.join(', ')}` });
+// ==================== INVENTORY ====================
+
+// Get stock for a product
+app.get('/api/inventory/:productId', (req, res) => {
+  try {
+    const product = db.prepare('SELECT id, name, stock FROM products WHERE id = ?').get(req.params.productId)
+    if (!product) {
+      return res.status(404).json({ error: 'Product not found' })
+    }
+    res.json(product)
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch inventory' })
   }
+})
 
-  order.status = status;
-  saveOrders(orders);
-
-  res.json(order);
-});
+// Get inventory summary (low stock alerts)
+app.get('/api/inventory/summary/alerts', (req, res) => {
+  try {
+    const lowStockProducts = db.prepare(`
+      SELECT id, name, stock FROM products WHERE stock < 3 ORDER BY stock ASC
+    `).all()
+    res.json(lowStockProducts)
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch inventory summary' })
+  }
+})
 
 app.listen(port, () => {
-  console.log(`✅ 빈티지 샵 API 서버 실행 중 → http://localhost:${port}`);
-});
+  console.log(`✅ 빈티지 샵 API 서버 실행 중 → http://localhost:${port}`)
+  console.log(`📦 데이터베이스: tokyo.db`)
+  console.log(`🔗 주요 엔드포인트:`)
+  console.log(`   - GET  /api/products`)
+  console.log(`   - POST /api/orders`)
+  console.log(`   - GET  /api/orders/:id`)
+  console.log(`   - PATCH /api/orders/:id (주문 상태 업데이트)`)
+  console.log(`   - GET  /api/shipping-methods`)
+})

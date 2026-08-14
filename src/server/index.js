@@ -11,7 +11,7 @@ app.use(express.json())
 // Initialize database
 initializeDatabase()
 
-const ADMIN_PASSWORD = 'admin123'
+const ADMIN_PASSWORD = '@940327dla'
 
 // ==================== AUTH ====================
 

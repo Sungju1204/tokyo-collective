@@ -11,6 +11,35 @@ app.use(express.json())
 // Initialize database
 initializeDatabase()
 
+const ADMIN_PASSWORD = 'admin123'
+
+// ==================== AUTH ====================
+
+// Admin login
+app.post('/api/admin/login', (req, res) => {
+  try {
+    const { password } = req.body
+
+    if (!password) {
+      return res.status(400).json({ error: '비번을 입력하세요' })
+    }
+
+    if (password === ADMIN_PASSWORD) {
+      // 간단한 토큰 생성 (프로덕션에서는 JWT 사용)
+      const token = 'admin_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      res.json({
+        token,
+        message: '로그인 성공'
+      })
+    } else {
+      res.status(401).json({ error: '비번이 틀렸습니다' })
+    }
+  } catch (err) {
+    console.error('Login error:', err)
+    res.status(500).json({ error: 'Login failed' })
+  }
+})
+
 // ==================== PRODUCTS ====================
 
 // Get all products

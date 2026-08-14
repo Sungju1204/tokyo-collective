@@ -47,7 +47,6 @@ function resetCategory() {
       </nav>
     </div>
     <div class="header-intro">
-      <h1 class="headline">ARCHIVE — TOKYO VINTAGE, CURATED</h1>
       <p v-show="!loading && !error" class="piece-count">{{ count }} pieces in rotation</p>
     </div>
   </header>
@@ -103,15 +102,6 @@ function resetCategory() {
   color: var(--color-patina);
 }
 
-.headline {
-  font-family: var(--font-display);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 1.6rem;
-  color: var(--color-paper);
-  margin: 0 0 8px;
-}
-
 .piece-count {
   font-family: var(--font-mono);
   font-size: 0.75rem;
@@ -128,10 +118,6 @@ function resetCategory() {
 
   .nav {
     gap: 24px;
-  }
-
-  .headline {
-    font-size: 1.2rem;
   }
 }
 </style>

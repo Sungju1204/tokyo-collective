@@ -1,4 +1,5 @@
 <script setup>
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useCartStore } from '../stores/cart'
 import Header from '../components/Header.vue'
@@ -6,6 +7,7 @@ import Footer from '../components/Footer.vue'
 
 const router = useRouter()
 const cartStore = useCartStore()
+const selectedCategory = ref(null)
 
 function goToCheckout() {
   if (cartStore.items.length > 0) {
@@ -16,11 +18,22 @@ function goToCheckout() {
 function goHome() {
   router.push('/')
 }
+
+function handleSelectCategory(category) {
+  router.push('/?category=' + (category ? category : ''))
+}
 </script>
 
 <template>
   <div class="app-container">
-    <Header :count="0" :loading="false" :error="null" />
+    <Header
+      :count="0"
+      :loading="false"
+      :error="null"
+      :active-category="selectedCategory"
+      :cart-count="cartStore.totalItems"
+      @select-category="handleSelectCategory"
+    />
     <main class="main-content">
       <div class="cart-container">
         <div v-if="cartStore.items.length === 0" class="empty-cart">

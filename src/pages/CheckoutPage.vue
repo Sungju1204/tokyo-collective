@@ -7,6 +7,7 @@ import Footer from '../components/Footer.vue'
 
 const router = useRouter()
 const cartStore = useCartStore()
+const selectedCategory = ref(null)
 
 const loading = ref(false)
 const orderPlaced = ref(false)
@@ -77,11 +78,22 @@ async function submitOrder() {
 function goBack() {
   router.push('/cart')
 }
+
+function handleSelectCategory(category) {
+  router.push('/?category=' + (category ? category : ''))
+}
 </script>
 
 <template>
   <div class="app-container">
-    <Header :count="0" :loading="false" :error="null" />
+    <Header
+      :count="0"
+      :loading="false"
+      :error="null"
+      :active-category="selectedCategory"
+      :cart-count="cartStore.totalItems"
+      @select-category="handleSelectCategory"
+    />
     <main class="main-content">
       <div class="checkout-container">
         <div v-if="!orderPlaced" class="checkout-content">

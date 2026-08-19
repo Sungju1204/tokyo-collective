@@ -81,28 +81,6 @@ export async function initializeDatabase() {
     await db.execute('ALTER TABLE products ADD COLUMN external_url TEXT')
   }
 
-  // Check if products already exist
-  const productCount = await db.execute('SELECT COUNT(*) as count FROM products')
-
-  if (productCount.rows[0].count === 0) {
-    // Insert initial products with stock
-    const products = [
-      { name: 'VINTAGE CARGO PANTS', price: 89000, category: 'Bottom', stock: 5, placeholderColor: '#1a1a1a' },
-      { name: 'SUPREME LOGO TEE', price: 125000, category: 'Top', stock: 3, placeholderColor: '#222' },
-      { name: 'OVERSIZED KNIT SWEATER', price: 158000, category: 'Top', stock: 4, placeholderColor: '#151515' },
-      { name: '90s DENIM JACKET', price: 210000, category: 'Outer', stock: 2, placeholderColor: '#1d1d1d' },
-      { name: 'LEATHER MESSENGER BAG', price: 175000, category: 'Acc', stock: 3, placeholderColor: '#111' },
-      { name: 'GRAFFITI PRINT HOODIE', price: 95000, category: 'Outer', stock: 6, placeholderColor: '#1f1f1f' }
-    ]
-
-    for (const product of products) {
-      await db.execute({
-        sql: `INSERT INTO products (name, price, category, stock, placeholderColor) VALUES (?, ?, ?, ?, ?)`,
-        args: [product.name, product.price, product.category, product.stock, product.placeholderColor]
-      })
-    }
-  }
-
   // Check if shipping methods exist
   const shippingCount = await db.execute('SELECT COUNT(*) as count FROM shipping_methods')
 

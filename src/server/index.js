@@ -112,7 +112,7 @@ app.get('/api/products/:id', async (req, res) => {
 // Create product (admin)
 app.post('/api/products', requireAdmin, async (req, res) => {
   try {
-    const { name, price, category, stock, placeholderColor, external_url } = req.body
+    const { name, price, category, stock, placeholderColor, external_url, image_url, description } = req.body
 
     if (!name || !category || price === undefined) {
       return res.status(400).json({ error: 'name, price, category는 필수입니다' })
@@ -122,15 +122,17 @@ app.post('/api/products', requireAdmin, async (req, res) => {
     }
 
     const result = await run(
-      `INSERT INTO products (name, price, category, stock, placeholderColor, external_url)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (name, price, category, stock, placeholderColor, external_url, image_url, description)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         Number(price),
         category,
         Number(stock) || 0,
         placeholderColor || '#1a1a1a',
-        external_url || null
+        external_url || null,
+        image_url || null,
+        description || null
       ]
     )
 
@@ -156,7 +158,9 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
       category = existing.category,
       stock = existing.stock,
       placeholderColor = existing.placeholderColor,
-      external_url = existing.external_url
+      external_url = existing.external_url,
+      image_url = existing.image_url,
+      description = existing.description
     } = req.body
 
     if (!Number.isFinite(Number(price)) || Number(price) < 0) {
@@ -164,8 +168,8 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
     }
 
     await run(
-      `UPDATE products SET name = ?, price = ?, category = ?, stock = ?, placeholderColor = ?, external_url = ? WHERE id = ?`,
-      [name, Number(price), category, Number(stock), placeholderColor, external_url, req.params.id]
+      `UPDATE products SET name = ?, price = ?, category = ?, stock = ?, placeholderColor = ?, external_url = ?, image_url = ?, description = ? WHERE id = ?`,
+      [name, Number(price), category, Number(stock), placeholderColor, external_url, image_url, description, req.params.id]
     )
 
     const updated = await get('SELECT * FROM products WHERE id = ?', [req.params.id])
@@ -173,6 +177,73 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
   } catch (err) {
     console.error('Product update error:', err)
     res.status(500).json({ error: 'Failed to update product' })
+  }
+})
+
+// Import product info from an external listing URL (admin) - currently
+// supports fruitsfamily.com product pages via their JSON-LD Product block.
+const IMPORT_ALLOWED_HOSTS = ['fruitsfamily.com', 'www.fruitsfamily.com']
+const CATEGORY_MAP = {
+  '아우터': 'Outer',
+  '상의': 'Top',
+  '하의': 'Bottom',
+  '팬츠': 'Bottom',
+  '신발': 'Acc',
+  '잡화': 'Acc',
+  '가방': 'Acc',
+  '액세서리': 'Acc'
+}
+
+app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
+  try {
+    const { url } = req.body
+    let parsedUrl
+    try {
+      parsedUrl = new URL(url)
+    } catch {
+      return res.status(400).json({ error: '올바른 URL이 아닙니다' })
+    }
+    if (!IMPORT_ALLOWED_HOSTS.includes(parsedUrl.hostname)) {
+      return res.status(400).json({ error: '지원하지 않는 사이트입니다 (fruitsfamily.com만 지원)' })
+    }
+
+    const pageResponse = await fetch(parsedUrl.toString(), {
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TokyoCollectiveBot/1.0)' }
+    })
+    if (!pageResponse.ok) {
+      return res.status(502).json({ error: '상품 페이지를 불러오지 못했습니다' })
+    }
+    const html = await pageResponse.text()
+
+    const ldJsonBlocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)]
+    let productData = null
+    for (const block of ldJsonBlocks) {
+      try {
+        const parsed = JSON.parse(block[1])
+        if (parsed['@type'] === 'Product') {
+          productData = parsed
+          break
+        }
+      } catch {
+        // skip malformed block
+      }
+    }
+
+    if (!productData) {
+      return res.status(422).json({ error: '상품 정보를 찾지 못했습니다' })
+    }
+
+    res.json({
+      name: productData.name || '',
+      price: productData.offers?.price ?? '',
+      description: productData.description || '',
+      image_url: Array.isArray(productData.image) ? productData.image[0] : productData.image || '',
+      category: CATEGORY_MAP[productData.category] || 'Top',
+      external_url: parsedUrl.toString()
+    })
+  } catch (err) {
+    console.error('Product import error:', err)
+    res.status(500).json({ error: '상품 정보를 가져오지 못했습니다' })
   }
 })
 

@@ -6,12 +6,14 @@
     <div v-for="product in products" :key="product.id" class="product-item" :class="{ 'is-sold-out': product.soldOut }">
       <span class="catalog-number">No. {{ String(product.id).padStart(3, '0') }}</span>
       <div class="image-wrapper">
-        <div class="placeholder-img" :style="{ backgroundColor: product.placeholderColor }">
+        <img v-if="product.image_url" :src="product.image_url" :alt="product.name" class="product-image" />
+        <div v-else class="placeholder-img" :style="{ backgroundColor: product.placeholderColor }">
           <span class="product-initial">{{ product.name.charAt(0) }}</span>
         </div>
       </div>
       <div class="product-info">
         <h3 class="product-name">{{ product.name }}</h3>
+        <p v-if="product.description" class="product-description">{{ product.description }}</p>
         <p class="product-price" :class="{ 'is-sold-out': product.soldOut }">
           ₩{{ product.price.toLocaleString() }}
           <span v-if="product.soldOut" class="sold-out">SOLD</span>
@@ -131,6 +133,12 @@ function handleBuyClick(product) {
   transition: filter 0.2s ease;
 }
 
+.product-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .product-initial {
   /* --color-paper (#ECE7DD) at low alpha, so the initial reads against the
      near-black placeholderColor values served by the API. */
@@ -153,6 +161,18 @@ function handleBuyClick(product) {
   letter-spacing: 0.01em;
   text-transform: uppercase;
   transition: color 0.2s ease;
+}
+
+.product-description {
+  font-family: var(--font-body);
+  color: var(--color-ash);
+  font-size: 0.7rem;
+  line-height: 1.4;
+  margin: 0 0 6px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .product-price {

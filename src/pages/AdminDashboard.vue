@@ -15,8 +15,11 @@ const categories = ['Outer', 'Top', 'Bottom', 'Acc']
 const products = ref([])
 const productsLoading = ref(true)
 const productsError = ref('')
-const newProduct = ref({ name: '', price: '', category: 'Top', stock: 0, external_url: '' })
+const newProduct = ref({ name: '', price: '', category: 'Top', stock: 0, external_url: '', image_url: '', description: '' })
 const savingProductId = ref(null)
+const importUrl = ref('')
+const importing = ref(false)
+const importError = ref('')
 
 const filteredOrders = computed(() => {
   return orders.value.filter(order => order.status === selectedTab.value)
@@ -105,10 +108,44 @@ async function createProduct() {
       return
     }
     if (!response.ok) throw new Error('Failed to create product')
-    newProduct.value = { name: '', price: '', category: 'Top', stock: 0, external_url: '' }
+    newProduct.value = { name: '', price: '', category: 'Top', stock: 0, external_url: '', image_url: '', description: '' }
+    importUrl.value = ''
     await loadProducts()
   } catch (err) {
     alert('상품 등록 실패: ' + err.message)
+  }
+}
+
+async function importFromUrl() {
+  if (!importUrl.value) return
+  try {
+    importing.value = true
+    importError.value = ''
+    const response = await fetch('/api/admin/import-product', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ url: importUrl.value })
+    })
+    if (response.status === 401) {
+      router.push('/admin/login')
+      return
+    }
+    const data = await response.json()
+    if (!response.ok) throw new Error(data.error || 'Failed to import product')
+
+    newProduct.value = {
+      name: data.name,
+      price: data.price,
+      category: data.category,
+      stock: newProduct.value.stock || 1,
+      external_url: data.external_url,
+      image_url: data.image_url,
+      description: data.description
+    }
+  } catch (err) {
+    importError.value = err.message
+  } finally {
+    importing.value = false
   }
 }
 
@@ -123,7 +160,9 @@ async function updateProduct(product) {
         price: Number(product.price),
         category: product.category,
         stock: Number(product.stock),
-        external_url: product.external_url
+        external_url: product.external_url,
+        image_url: product.image_url,
+        description: product.description
       })
     })
     if (response.status === 401) {
@@ -305,6 +344,21 @@ onMounted(() => {
       <div v-if="productsError" class="error-message">{{ productsError }}</div>
 
       <div class="product-form">
+        <h3>후르츠 링크로 가져오기</h3>
+        <div class="import-row">
+          <input
+            v-model="importUrl"
+            type="text"
+            placeholder="https://fruitsfamily.com/product/..."
+            class="url-input"
+            @keyup.enter="importFromUrl"
+          />
+          <button class="btn btn-confirm" :disabled="importing" @click="importFromUrl">
+            {{ importing ? '가져오는 중...' : '🔗 가져오기' }}
+          </button>
+        </div>
+        <p v-if="importError" class="error-message">{{ importError }}</p>
+
         <h3>새 상품 등록</h3>
         <div class="product-form-grid">
           <input v-model="newProduct.name" type="text" placeholder="상품명" />
@@ -314,6 +368,11 @@ onMounted(() => {
           </select>
           <input v-model.number="newProduct.stock" type="number" placeholder="재고" />
           <input v-model="newProduct.external_url" type="text" placeholder="후르츠 링크 (https://...)" class="url-input" />
+          <input v-model="newProduct.image_url" type="text" placeholder="이미지 URL" class="url-input" />
+          <textarea v-model="newProduct.description" placeholder="상품 설명" class="description-input"></textarea>
+        </div>
+        <div v-if="newProduct.image_url" class="preview">
+          <img :src="newProduct.image_url" alt="preview" />
         </div>
         <button class="btn btn-confirm" @click="createProduct">➕ 등록</button>
       </div>
@@ -326,6 +385,7 @@ onMounted(() => {
 
       <div v-else class="products-grid">
         <div v-for="product in products" :key="product.id" class="product-card">
+          <img v-if="product.image_url" :src="product.image_url" alt="" class="product-card-image" />
           <input v-model="product.name" type="text" placeholder="상품명" />
           <input v-model.number="product.price" type="number" placeholder="가격" />
           <select v-model="product.category">
@@ -333,6 +393,8 @@ onMounted(() => {
           </select>
           <input v-model.number="product.stock" type="number" placeholder="재고" />
           <input v-model="product.external_url" type="text" placeholder="후르츠 링크" class="url-input" />
+          <input v-model="product.image_url" type="text" placeholder="이미지 URL" class="url-input" />
+          <textarea v-model="product.description" placeholder="상품 설명" class="description-input"></textarea>
           <div class="product-card-actions">
             <button
               class="btn btn-confirm"
@@ -439,11 +501,46 @@ onMounted(() => {
   margin: 0 0 16px;
 }
 
+.import-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.import-row .url-input {
+  flex: 1;
+}
+
 .product-form-grid {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 1fr 2fr;
   gap: 8px;
   margin-bottom: 16px;
+}
+
+.description-input {
+  grid-column: 1 / -1;
+  resize: vertical;
+  min-height: 60px;
+  font-family: var(--font-body) !important;
+}
+
+.preview {
+  margin-bottom: 16px;
+}
+
+.preview img {
+  max-width: 160px;
+  max-height: 160px;
+  object-fit: cover;
+  border: 1px solid var(--color-hairline);
+}
+
+.product-card-image {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border: 1px solid var(--color-hairline);
 }
 
 .products-grid {
@@ -463,8 +560,10 @@ onMounted(() => {
 
 .product-card input,
 .product-card select,
+.product-card textarea,
 .product-form input,
-.product-form select {
+.product-form select,
+.product-form textarea {
   padding: 8px;
   border: 1px solid var(--color-hairline);
   background: var(--color-ink);

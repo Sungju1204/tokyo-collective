@@ -17,12 +17,13 @@
           <span v-if="product.soldOut" class="sold-out">SOLD</span>
         </p>
         <button
-          v-if="!product.soldOut"
+          v-if="!product.soldOut && product.external_url"
           class="btn-add-to-cart"
-          @click="handleAddToCart(product)"
+          @click="handleBuyClick(product)"
         >
-          장바구니 담기
+          구매하기
         </button>
+        <p v-else-if="!product.soldOut" class="link-pending">링크 준비중</p>
       </div>
     </div>
   </div>
@@ -44,11 +45,9 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['add-to-cart'])
-
-function handleAddToCart(product) {
-  if (!product.soldOut) {
-    emit('add-to-cart', product)
+function handleBuyClick(product) {
+  if (!product.soldOut && product.external_url) {
+    window.open(product.external_url, '_blank', 'noopener')
   }
 }
 </script>
@@ -202,6 +201,15 @@ function handleAddToCart(product) {
   background: var(--color-paper);
   color: var(--color-ink);
   border-color: var(--color-paper);
+}
+
+.link-pending {
+  margin-top: 12px;
+  font-family: var(--font-body);
+  font-size: 0.7rem;
+  color: var(--color-ash);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 @media (max-width: 768px) {

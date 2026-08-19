@@ -1,8 +1,6 @@
 <script setup>
-import { useRouter } from 'vue-router'
 import logo from '../assets/logo.png'
 
-const router = useRouter()
 const categories = ['Outer', 'Top', 'Bottom', 'Acc']
 
 const props = defineProps({
@@ -22,10 +20,6 @@ const props = defineProps({
     type: String,
     default: null
   },
-  cartCount: {
-    type: Number,
-    default: 0
-  },
   showPieceCount: {
     type: Boolean,
     default: true
@@ -40,10 +34,6 @@ function selectCategory(category) {
 
 function resetCategory() {
   emit('select-category', null)
-}
-
-function goToCart() {
-  router.push('/cart')
 }
 </script>
 
@@ -63,10 +53,6 @@ function goToCart() {
           @click="selectCategory(category)"
         >{{ category }}</button>
       </nav>
-      <button class="cart-button" @click="goToCart">
-        <span class="cart-text">장바구니</span>
-        <span v-if="cartCount > 0" class="cart-badge">{{ cartCount }}</span>
-      </button>
     </div>
     <div v-if="showPieceCount" class="header-intro">
       <p v-show="!loading && !error" class="piece-count">{{ count }} pieces in rotation</p>

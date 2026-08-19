@@ -73,6 +73,14 @@ export async function initializeDatabase() {
     )
   `)
 
+  // Migration: add external_url to products if it doesn't exist yet
+  // (link to the seller's listing on an external marketplace, e.g. 후르츠)
+  const columns = await db.execute('PRAGMA table_info(products)')
+  const hasExternalUrl = columns.rows.some(col => col.name === 'external_url')
+  if (!hasExternalUrl) {
+    await db.execute('ALTER TABLE products ADD COLUMN external_url TEXT')
+  }
+
   // Check if products already exist
   const productCount = await db.execute('SELECT COUNT(*) as count FROM products')
 

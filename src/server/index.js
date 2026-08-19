@@ -109,6 +109,88 @@ app.get('/api/products/:id', async (req, res) => {
   }
 })
 
+// Create product (admin)
+app.post('/api/products', requireAdmin, async (req, res) => {
+  try {
+    const { name, price, category, stock, placeholderColor, external_url } = req.body
+
+    if (!name || !category || price === undefined) {
+      return res.status(400).json({ error: 'name, price, category는 필수입니다' })
+    }
+    if (!Number.isFinite(Number(price)) || Number(price) < 0) {
+      return res.status(400).json({ error: 'price가 올바르지 않습니다' })
+    }
+
+    const result = await run(
+      `INSERT INTO products (name, price, category, stock, placeholderColor, external_url)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        name,
+        Number(price),
+        category,
+        Number(stock) || 0,
+        placeholderColor || '#1a1a1a',
+        external_url || null
+      ]
+    )
+
+    const product = await get('SELECT * FROM products WHERE id = ?', [Number(result.lastInsertRowid)])
+    res.status(201).json(product)
+  } catch (err) {
+    console.error('Product creation error:', err)
+    res.status(500).json({ error: 'Failed to create product' })
+  }
+})
+
+// Update product (admin)
+app.patch('/api/products/:id', requireAdmin, async (req, res) => {
+  try {
+    const existing = await get('SELECT * FROM products WHERE id = ?', [req.params.id])
+    if (!existing) {
+      return res.status(404).json({ error: 'Product not found' })
+    }
+
+    const {
+      name = existing.name,
+      price = existing.price,
+      category = existing.category,
+      stock = existing.stock,
+      placeholderColor = existing.placeholderColor,
+      external_url = existing.external_url
+    } = req.body
+
+    if (!Number.isFinite(Number(price)) || Number(price) < 0) {
+      return res.status(400).json({ error: 'price가 올바르지 않습니다' })
+    }
+
+    await run(
+      `UPDATE products SET name = ?, price = ?, category = ?, stock = ?, placeholderColor = ?, external_url = ? WHERE id = ?`,
+      [name, Number(price), category, Number(stock), placeholderColor, external_url, req.params.id]
+    )
+
+    const updated = await get('SELECT * FROM products WHERE id = ?', [req.params.id])
+    res.json(updated)
+  } catch (err) {
+    console.error('Product update error:', err)
+    res.status(500).json({ error: 'Failed to update product' })
+  }
+})
+
+// Delete product (admin)
+app.delete('/api/products/:id', requireAdmin, async (req, res) => {
+  try {
+    const existing = await get('SELECT * FROM products WHERE id = ?', [req.params.id])
+    if (!existing) {
+      return res.status(404).json({ error: 'Product not found' })
+    }
+    await run('DELETE FROM products WHERE id = ?', [req.params.id])
+    res.status(204).end()
+  } catch (err) {
+    console.error('Product delete error:', err)
+    res.status(500).json({ error: 'Failed to delete product' })
+  }
+})
+
 // ==================== SHIPPING METHODS ====================
 
 // Get all shipping methods

@@ -9,6 +9,15 @@ const error = ref('')
 const selectedTab = ref('pending')
 const trackingNumbers = ref({})
 
+const view = ref('orders') // 'orders' | 'products'
+const categories = ['Outer', 'Top', 'Bottom', 'Acc']
+
+const products = ref([])
+const productsLoading = ref(true)
+const productsError = ref('')
+const newProduct = ref({ name: '', price: '', category: 'Top', stock: 0, external_url: '' })
+const savingProductId = ref(null)
+
 const filteredOrders = computed(() => {
   return orders.value.filter(order => order.status === selectedTab.value)
 })
@@ -66,6 +75,88 @@ async function updateOrderStatus(orderId, newStatus) {
   }
 }
 
+async function loadProducts() {
+  try {
+    productsLoading.value = true
+    const response = await fetch('/api/products')
+    if (!response.ok) throw new Error('Failed to load products')
+    products.value = await response.json()
+  } catch (err) {
+    productsError.value = '상품 목록을 불러올 수 없습니다'
+    console.error(err)
+  } finally {
+    productsLoading.value = false
+  }
+}
+
+async function createProduct() {
+  if (!newProduct.value.name || !newProduct.value.price) {
+    alert('상품명과 가격은 필수입니다')
+    return
+  }
+  try {
+    const response = await fetch('/api/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify(newProduct.value)
+    })
+    if (response.status === 401) {
+      router.push('/admin/login')
+      return
+    }
+    if (!response.ok) throw new Error('Failed to create product')
+    newProduct.value = { name: '', price: '', category: 'Top', stock: 0, external_url: '' }
+    await loadProducts()
+  } catch (err) {
+    alert('상품 등록 실패: ' + err.message)
+  }
+}
+
+async function updateProduct(product) {
+  try {
+    savingProductId.value = product.id
+    const response = await fetch(`/api/products/${product.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({
+        name: product.name,
+        price: Number(product.price),
+        category: product.category,
+        stock: Number(product.stock),
+        external_url: product.external_url
+      })
+    })
+    if (response.status === 401) {
+      router.push('/admin/login')
+      return
+    }
+    if (!response.ok) throw new Error('Failed to update product')
+    await loadProducts()
+  } catch (err) {
+    alert('상품 수정 실패: ' + err.message)
+  } finally {
+    savingProductId.value = null
+  }
+}
+
+async function deleteProduct(id) {
+  if (!confirm('이 상품을 삭제할까요?')) return
+  try {
+    const response = await fetch(`/api/products/${id}`, {
+      method: 'DELETE',
+      headers: authHeaders()
+    })
+    if (response.status === 401) {
+      router.push('/admin/login')
+      return
+    }
+    if (!response.ok) throw new Error('Failed to delete product')
+    await loadProducts()
+  } catch (err) {
+    alert('상품 삭제 실패: ' + err.message)
+  }
+}
+
 function logout() {
   localStorage.removeItem('admin_token')
   router.push('/admin/login')
@@ -82,6 +173,7 @@ function formatPrice(price) {
 
 onMounted(() => {
   loadOrders()
+  loadProducts()
   // 30초마다 자동 새로고침
   setInterval(loadOrders, 30000)
 })
@@ -91,10 +183,24 @@ onMounted(() => {
   <div class="admin-container">
     <main class="admin-content">
       <div class="admin-header">
-        <h1>📦 배송 관리 대시보드</h1>
+        <h1>{{ view === 'orders' ? '📦 배송 관리 대시보드' : '🏷️ 상품 관리' }}</h1>
         <button class="logout-btn" @click="logout">로그아웃</button>
       </div>
 
+      <div class="view-switch">
+        <button
+          class="view-switch-btn"
+          :class="{ active: view === 'orders' }"
+          @click="view = 'orders'"
+        >주문 관리</button>
+        <button
+          class="view-switch-btn"
+          :class="{ active: view === 'products' }"
+          @click="view = 'products'"
+        >상품 관리</button>
+      </div>
+
+      <template v-if="view === 'orders'">
       <div v-if="error" class="error-message">{{ error }}</div>
 
       <div class="tabs">
@@ -193,6 +299,51 @@ onMounted(() => {
           </div>
         </div>
       </div>
+      </template>
+
+      <template v-else>
+      <div v-if="productsError" class="error-message">{{ productsError }}</div>
+
+      <div class="product-form">
+        <h3>새 상품 등록</h3>
+        <div class="product-form-grid">
+          <input v-model="newProduct.name" type="text" placeholder="상품명" />
+          <input v-model.number="newProduct.price" type="number" placeholder="가격" />
+          <select v-model="newProduct.category">
+            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+          </select>
+          <input v-model.number="newProduct.stock" type="number" placeholder="재고" />
+          <input v-model="newProduct.external_url" type="text" placeholder="후르츠 링크 (https://...)" class="url-input" />
+        </div>
+        <button class="btn btn-confirm" @click="createProduct">➕ 등록</button>
+      </div>
+
+      <div v-if="productsLoading" class="loading">로딩 중...</div>
+
+      <div v-else-if="products.length === 0" class="empty">
+        <p>등록된 상품이 없습니다</p>
+      </div>
+
+      <div v-else class="products-grid">
+        <div v-for="product in products" :key="product.id" class="product-card">
+          <input v-model="product.name" type="text" placeholder="상품명" />
+          <input v-model.number="product.price" type="number" placeholder="가격" />
+          <select v-model="product.category">
+            <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
+          </select>
+          <input v-model.number="product.stock" type="number" placeholder="재고" />
+          <input v-model="product.external_url" type="text" placeholder="후르츠 링크" class="url-input" />
+          <div class="product-card-actions">
+            <button
+              class="btn btn-confirm"
+              :disabled="savingProductId === product.id"
+              @click="updateProduct(product)"
+            >💾 저장</button>
+            <button class="btn btn-delete" @click="deleteProduct(product.id)">🗑️ 삭제</button>
+          </div>
+        </div>
+      </div>
+      </template>
     </main>
   </div>
 </template>
@@ -247,6 +398,107 @@ onMounted(() => {
   border-radius: 4px;
   margin-bottom: 20px;
   font-family: var(--font-body);
+}
+
+.view-switch {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.view-switch-btn {
+  padding: 10px 20px;
+  background: transparent;
+  color: var(--color-ash);
+  border: 1px solid var(--color-hairline);
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.view-switch-btn.active,
+.view-switch-btn:hover {
+  color: var(--color-ink);
+  background: var(--color-patina);
+  border-color: var(--color-patina);
+}
+
+.product-form {
+  border: 1px solid var(--color-hairline);
+  background: var(--color-surface);
+  padding: 20px;
+  margin-bottom: 32px;
+}
+
+.product-form h3 {
+  font-family: var(--font-body);
+  font-size: 1rem;
+  color: var(--color-paper);
+  margin: 0 0 16px;
+}
+
+.product-form-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 1fr 2fr;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 20px;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-surface);
+  padding: 16px;
+}
+
+.product-card input,
+.product-card select,
+.product-form input,
+.product-form select {
+  padding: 8px;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-ink);
+  color: var(--color-paper);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.url-input {
+  grid-column: span 1;
+}
+
+.product-card-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn-delete {
+  background: rgba(255, 107, 107, 0.15);
+  color: #ff6b6b;
+}
+
+.btn-delete:hover {
+  background: #ff6b6b;
+  color: white;
+}
+
+@media (max-width: 900px) {
+  .product-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 .tabs {

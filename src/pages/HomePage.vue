@@ -1,15 +1,8 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { useCartStore } from '../stores/cart'
 import Header from '../components/Header.vue'
 import ProductGrid from '../components/ProductGrid.vue'
 import Footer from '../components/Footer.vue'
-import CartNotification from '../components/CartNotification.vue'
-
-const router = useRouter()
-const cartStore = useCartStore()
-const cartNotification = ref(null)
 
 const products = ref([])
 const loading = ref(true)
@@ -43,11 +36,6 @@ function handleSelectCategory(category) {
   selectedCategory.value = category
 }
 
-function handleAddToCart(product) {
-  cartStore.addToCart(product)
-  cartNotification.value.show(product.name)
-}
-
 onMounted(() => {
   fetchProducts()
 })
@@ -60,7 +48,6 @@ onMounted(() => {
       :loading="loading"
       :error="error"
       :active-category="selectedCategory"
-      :cart-count="cartStore.totalItems"
       @select-category="handleSelectCategory"
     />
     <main class="main-content">
@@ -68,11 +55,9 @@ onMounted(() => {
         :products="filteredProducts"
         :loading="loading"
         :error="error"
-        @add-to-cart="handleAddToCart"
       />
     </main>
     <Footer />
-    <CartNotification ref="cartNotification" />
   </div>
 </template>
 

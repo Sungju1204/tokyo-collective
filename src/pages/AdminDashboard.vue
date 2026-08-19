@@ -21,7 +21,7 @@ function authHeaders() {
 async function loadOrders() {
   try {
     loading.value = true
-    const response = await fetch('http://localhost:3000/api/orders', {
+    const response = await fetch('/api/orders', {
       headers: authHeaders()
     })
     if (response.status === 401) {
@@ -42,7 +42,7 @@ async function updateOrderStatus(orderId, newStatus) {
   try {
     const trackingNumber = trackingNumbers.value[orderId] || ''
 
-    const response = await fetch(`http://localhost:3000/api/orders/${orderId}`, {
+    const response = await fetch(`/api/orders/${orderId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({

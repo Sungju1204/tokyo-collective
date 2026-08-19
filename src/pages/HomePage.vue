@@ -26,7 +26,7 @@ const filteredProducts = computed(() => {
 const fetchProducts = async () => {
   try {
     loading.value = true
-    const response = await fetch('http://localhost:3000/api/products')
+    const response = await fetch('/api/products')
     if (!response.ok) {
       throw new Error('Failed to fetch products')
     }

@@ -1,19 +1,23 @@
-import Database from 'better-sqlite3'
+import { createClient } from '@libsql/client'
 import path from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const dbPath = path.join(__dirname, 'tokyo.db')
 
-const db = new Database(dbPath)
-
-// Enable foreign keys
-db.pragma('foreign_keys = ON')
+// Local dev: plain file DB. Production (Vercel): Turso (set via env vars).
+const db = process.env.TURSO_DATABASE_URL
+  ? createClient({
+      url: process.env.TURSO_DATABASE_URL,
+      authToken: process.env.TURSO_AUTH_TOKEN
+    })
+  : createClient({
+      url: `file:${path.join(__dirname, 'tokyo.db')}`
+    })
 
 // Initialize database schema
-export function initializeDatabase() {
+export async function initializeDatabase() {
   // Products table with inventory
-  db.exec(`
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS products (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
@@ -27,7 +31,7 @@ export function initializeDatabase() {
   `)
 
   // Orders table
-  db.exec(`
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS orders (
       id TEXT PRIMARY KEY,
       customer_name TEXT NOT NULL,
@@ -48,7 +52,7 @@ export function initializeDatabase() {
   `)
 
   // Order status history table
-  db.exec(`
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS order_status_history (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       order_id TEXT NOT NULL,
@@ -60,7 +64,7 @@ export function initializeDatabase() {
   `)
 
   // Shipping methods table
-  db.exec(`
+  await db.execute(`
     CREATE TABLE IF NOT EXISTS shipping_methods (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL UNIQUE,
@@ -70,9 +74,9 @@ export function initializeDatabase() {
   `)
 
   // Check if products already exist
-  const productCount = db.prepare('SELECT COUNT(*) as count FROM products').get()
+  const productCount = await db.execute('SELECT COUNT(*) as count FROM products')
 
-  if (productCount.count === 0) {
+  if (productCount.rows[0].count === 0) {
     // Insert initial products with stock
     const products = [
       { name: 'VINTAGE CARGO PANTS', price: 89000, category: 'Bottom', stock: 5, placeholderColor: '#1a1a1a' },
@@ -83,28 +87,30 @@ export function initializeDatabase() {
       { name: 'GRAFFITI PRINT HOODIE', price: 95000, category: 'Outer', stock: 6, placeholderColor: '#1f1f1f' }
     ]
 
-    const insertProduct = db.prepare(`
-      INSERT INTO products (name, price, category, stock, placeholderColor)
-      VALUES (?, ?, ?, ?, ?)
-    `)
-
-    products.forEach(product => {
-      insertProduct.run(product.name, product.price, product.category, product.stock, product.placeholderColor)
-    })
+    for (const product of products) {
+      await db.execute({
+        sql: `INSERT INTO products (name, price, category, stock, placeholderColor) VALUES (?, ?, ?, ?, ?)`,
+        args: [product.name, product.price, product.category, product.stock, product.placeholderColor]
+      })
+    }
   }
 
   // Check if shipping methods exist
-  const shippingCount = db.prepare('SELECT COUNT(*) as count FROM shipping_methods').get()
+  const shippingCount = await db.execute('SELECT COUNT(*) as count FROM shipping_methods')
 
-  if (shippingCount.count === 0) {
-    const insertShipping = db.prepare(`
-      INSERT INTO shipping_methods (name, price, estimated_days)
-      VALUES (?, ?, ?)
-    `)
+  if (shippingCount.rows[0].count === 0) {
+    const shippingMethods = [
+      ['Standard', 0, 5],
+      ['Express', 5000, 2],
+      ['Overnight', 10000, 1]
+    ]
 
-    insertShipping.run('Standard', 0, 5)
-    insertShipping.run('Express', 5000, 2)
-    insertShipping.run('Overnight', 10000, 1)
+    for (const [name, price, days] of shippingMethods) {
+      await db.execute({
+        sql: `INSERT INTO shipping_methods (name, price, estimated_days) VALUES (?, ?, ?)`,
+        args: [name, price, days]
+      })
+    }
   }
 
   console.log('✅ Database initialized successfully')

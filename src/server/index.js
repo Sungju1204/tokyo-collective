@@ -1,6 +1,13 @@
 import express from 'express'
 import cors from 'cors'
+import { randomBytes } from 'crypto'
 import db, { initializeDatabase } from './db.js'
+
+try {
+  process.loadEnvFile()
+} catch {
+  // no .env file present; rely on real environment variables instead
+}
 
 const app = express()
 const port = 3000
@@ -11,7 +18,25 @@ app.use(express.json())
 // Initialize database
 initializeDatabase()
 
-const ADMIN_PASSWORD = '@940327dla'
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
+if (!ADMIN_PASSWORD) {
+  console.error('❌ ADMIN_PASSWORD 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.')
+  process.exit(1)
+}
+
+// Issued admin tokens live only in memory - they reset when the server restarts.
+const validAdminTokens = new Set()
+
+function requireAdmin(req, res, next) {
+  const authHeader = req.headers.authorization || ''
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
+
+  if (!token || !validAdminTokens.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
+
+  next()
+}
 
 // ==================== AUTH ====================
 
@@ -25,8 +50,8 @@ app.post('/api/admin/login', (req, res) => {
     }
 
     if (password === ADMIN_PASSWORD) {
-      // 간단한 토큰 생성 (프로덕션에서는 JWT 사용)
-      const token = 'admin_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)
+      const token = 'admin_' + randomBytes(32).toString('hex')
+      validAdminTokens.add(token)
       res.json({
         token,
         message: '로그인 성공'
@@ -175,7 +200,7 @@ app.post('/api/orders', (req, res) => {
 })
 
 // Get all orders
-app.get('/api/orders', (req, res) => {
+app.get('/api/orders', requireAdmin, (req, res) => {
   try {
     const orders = db.prepare('SELECT * FROM orders ORDER BY created_at DESC').all()
     const formatted = orders.map(order => ({
@@ -189,7 +214,7 @@ app.get('/api/orders', (req, res) => {
 })
 
 // Get order by ID
-app.get('/api/orders/:id', (req, res) => {
+app.get('/api/orders/:id', requireAdmin, (req, res) => {
   try {
     const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id)
     if (!order) {
@@ -213,7 +238,7 @@ app.get('/api/orders/:id', (req, res) => {
 })
 
 // Update order status
-app.patch('/api/orders/:id', (req, res) => {
+app.patch('/api/orders/:id', requireAdmin, (req, res) => {
   try {
     const { status, notes, trackingNumber } = req.body
     const orderId = req.params.id

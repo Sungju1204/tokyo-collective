@@ -13,10 +13,21 @@ const filteredOrders = computed(() => {
   return orders.value.filter(order => order.status === selectedTab.value)
 })
 
+function authHeaders() {
+  const token = localStorage.getItem('admin_token')
+  return token ? { Authorization: `Bearer ${token}` } : {}
+}
+
 async function loadOrders() {
   try {
     loading.value = true
-    const response = await fetch('http://localhost:3000/api/orders')
+    const response = await fetch('http://localhost:3000/api/orders', {
+      headers: authHeaders()
+    })
+    if (response.status === 401) {
+      router.push('/admin/login')
+      return
+    }
     if (!response.ok) throw new Error('Failed to load orders')
     orders.value = await response.json()
   } catch (err) {
@@ -33,7 +44,7 @@ async function updateOrderStatus(orderId, newStatus) {
 
     const response = await fetch(`http://localhost:3000/api/orders/${orderId}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
       body: JSON.stringify({
         status: newStatus,
         trackingNumber: trackingNumber,
@@ -41,6 +52,10 @@ async function updateOrderStatus(orderId, newStatus) {
       })
     })
 
+    if (response.status === 401) {
+      router.push('/admin/login')
+      return
+    }
     if (!response.ok) throw new Error('Failed to update order')
 
     // 목록 새로고침

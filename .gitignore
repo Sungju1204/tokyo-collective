@@ -28,3 +28,10 @@ coverage
 *.sw?
 
 *.tsbuildinfo
+
+# Secrets
+.env
+.env.*
+
+# Local database
+src/server/*.db

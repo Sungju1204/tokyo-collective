@@ -203,13 +203,22 @@ app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
     } catch {
       return res.status(400).json({ error: '올바른 URL이 아닙니다' })
     }
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      return res.status(400).json({ error: '올바른 URL이 아닙니다' })
+    }
     if (!IMPORT_ALLOWED_HOSTS.includes(parsedUrl.hostname)) {
       return res.status(400).json({ error: '지원하지 않는 사이트입니다 (fruitsfamily.com만 지원)' })
     }
 
+    // redirect: 'manual' so a redirect off fruitsfamily.com (e.g. to an
+    // internal address) can't silently bypass the host allowlist above.
     const pageResponse = await fetch(parsedUrl.toString(), {
+      redirect: 'manual',
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TokyoCollectiveBot/1.0)' }
     })
+    if (pageResponse.type === 'opaqueredirect' || (pageResponse.status >= 300 && pageResponse.status < 400)) {
+      return res.status(502).json({ error: '이 링크는 다른 주소로 리다이렉트되어 처리할 수 없습니다' })
+    }
     if (!pageResponse.ok) {
       return res.status(502).json({ error: '상품 페이지를 불러오지 못했습니다' })
     }

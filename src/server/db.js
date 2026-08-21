@@ -79,7 +79,8 @@ export async function initializeDatabase() {
   const migrations = {
     external_url: 'ALTER TABLE products ADD COLUMN external_url TEXT', // link to the seller's listing on an external marketplace, e.g. 후르츠
     image_url: 'ALTER TABLE products ADD COLUMN image_url TEXT',
-    description: 'ALTER TABLE products ADD COLUMN description TEXT'
+    description: 'ALTER TABLE products ADD COLUMN description TEXT',
+    size: 'ALTER TABLE products ADD COLUMN size TEXT'
   }
   for (const [column, sql] of Object.entries(migrations)) {
     if (!columnNames.includes(column)) {

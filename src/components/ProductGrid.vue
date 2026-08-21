@@ -13,6 +13,7 @@
       </div>
       <div class="product-info">
         <h3 class="product-name">{{ product.name }}</h3>
+        <p v-if="product.size" class="product-size">SIZE {{ product.size }}</p>
         <p v-if="product.description" class="product-description">{{ product.description }}</p>
         <p class="product-price" :class="{ 'is-sold-out': product.soldOut }">
           ₩{{ product.price.toLocaleString() }}
@@ -161,6 +162,14 @@ function handleBuyClick(product) {
   letter-spacing: 0.01em;
   text-transform: uppercase;
   transition: color 0.2s ease;
+}
+
+.product-size {
+  font-family: var(--font-mono);
+  color: var(--color-ash);
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  margin: 0 0 4px;
 }
 
 .product-description {

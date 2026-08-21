@@ -15,7 +15,7 @@ const categories = ['Outer', 'Top', 'Bottom', 'Acc']
 const products = ref([])
 const productsLoading = ref(true)
 const productsError = ref('')
-const newProduct = ref({ name: '', price: '', category: 'Top', stock: 0, external_url: '', image_url: '', description: '' })
+const newProduct = ref({ name: '', price: '', category: 'Top', stock: 0, external_url: '', image_url: '', description: '', size: '' })
 const savingProductId = ref(null)
 const importUrl = ref('')
 const importing = ref(false)
@@ -108,7 +108,7 @@ async function createProduct() {
       return
     }
     if (!response.ok) throw new Error('Failed to create product')
-    newProduct.value = { name: '', price: '', category: 'Top', stock: 0, external_url: '', image_url: '', description: '' }
+    newProduct.value = { name: '', price: '', category: 'Top', stock: 0, external_url: '', image_url: '', description: '', size: '' }
     importUrl.value = ''
     await loadProducts()
   } catch (err) {
@@ -140,7 +140,8 @@ async function importFromUrl() {
       stock: newProduct.value.stock || 1,
       external_url: data.external_url,
       image_url: data.image_url,
-      description: data.description
+      description: data.description,
+      size: data.size
     }
   } catch (err) {
     importError.value = err.message
@@ -162,7 +163,8 @@ async function updateProduct(product) {
         stock: Number(product.stock),
         external_url: product.external_url,
         image_url: product.image_url,
-        description: product.description
+        description: product.description,
+        size: product.size
       })
     })
     if (response.status === 401) {
@@ -367,6 +369,7 @@ onMounted(() => {
             <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
           </select>
           <input v-model.number="newProduct.stock" type="number" placeholder="재고" />
+          <input v-model="newProduct.size" type="text" placeholder="사이즈" />
           <input v-model="newProduct.external_url" type="text" placeholder="후르츠 링크 (https://...)" class="url-input" />
           <input v-model="newProduct.image_url" type="text" placeholder="이미지 URL" class="url-input" />
           <textarea v-model="newProduct.description" placeholder="상품 설명" class="description-input"></textarea>
@@ -392,6 +395,7 @@ onMounted(() => {
             <option v-for="c in categories" :key="c" :value="c">{{ c }}</option>
           </select>
           <input v-model.number="product.stock" type="number" placeholder="재고" />
+          <input v-model="product.size" type="text" placeholder="사이즈" />
           <input v-model="product.external_url" type="text" placeholder="후르츠 링크" class="url-input" />
           <input v-model="product.image_url" type="text" placeholder="이미지 URL" class="url-input" />
           <textarea v-model="product.description" placeholder="상품 설명" class="description-input"></textarea>

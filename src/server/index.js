@@ -112,7 +112,7 @@ app.get('/api/products/:id', async (req, res) => {
 // Create product (admin)
 app.post('/api/products', requireAdmin, async (req, res) => {
   try {
-    const { name, price, category, stock, placeholderColor, external_url, image_url, description } = req.body
+    const { name, price, category, stock, placeholderColor, external_url, image_url, description, size } = req.body
 
     if (!name || !category || price === undefined) {
       return res.status(400).json({ error: 'name, price, category는 필수입니다' })
@@ -122,8 +122,8 @@ app.post('/api/products', requireAdmin, async (req, res) => {
     }
 
     const result = await run(
-      `INSERT INTO products (name, price, category, stock, placeholderColor, external_url, image_url, description)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO products (name, price, category, stock, placeholderColor, external_url, image_url, description, size)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         name,
         Number(price),
@@ -132,7 +132,8 @@ app.post('/api/products', requireAdmin, async (req, res) => {
         placeholderColor || '#1a1a1a',
         external_url || null,
         image_url || null,
-        description || null
+        description || null,
+        size || null
       ]
     )
 
@@ -160,7 +161,8 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
       placeholderColor = existing.placeholderColor,
       external_url = existing.external_url,
       image_url = existing.image_url,
-      description = existing.description
+      description = existing.description,
+      size = existing.size
     } = req.body
 
     if (!Number.isFinite(Number(price)) || Number(price) < 0) {
@@ -168,8 +170,8 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
     }
 
     await run(
-      `UPDATE products SET name = ?, price = ?, category = ?, stock = ?, placeholderColor = ?, external_url = ?, image_url = ?, description = ? WHERE id = ?`,
-      [name, Number(price), category, Number(stock), placeholderColor, external_url, image_url, description, req.params.id]
+      `UPDATE products SET name = ?, price = ?, category = ?, stock = ?, placeholderColor = ?, external_url = ?, image_url = ?, description = ?, size = ? WHERE id = ?`,
+      [name, Number(price), category, Number(stock), placeholderColor, external_url, image_url, description, size, req.params.id]
     )
 
     const updated = await get('SELECT * FROM products WHERE id = ?', [req.params.id])
@@ -248,6 +250,7 @@ app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
       description: productData.description || '',
       image_url: Array.isArray(productData.image) ? productData.image[0] : productData.image || '',
       category: CATEGORY_MAP[productData.category] || 'Top',
+      size: productData.size || '',
       external_url: parsedUrl.toString()
     })
   } catch (err) {

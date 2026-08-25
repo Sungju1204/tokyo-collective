@@ -1,6 +1,6 @@
 import express from 'express'
 import cors from 'cors'
-import { randomBytes } from 'crypto'
+import { createHmac, timingSafeEqual } from 'crypto'
 import db, { initializeDatabase } from './db.js'
 
 try {
@@ -36,15 +36,36 @@ if (!ADMIN_PASSWORD) {
   process.exit(1)
 }
 
-// Issued admin tokens live only in memory - they reset when the server restarts
-// (and on Vercel, per cold-started instance).
-const validAdminTokens = new Set()
+// Self-verifying tokens (HMAC-signed, expiry embedded) rather than a server-side
+// session store, since Vercel routes requests across multiple stateless instances
+// that don't share in-memory state.
+const ADMIN_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000
+
+function signAdminToken(expiresAt) {
+  const payload = `admin.${expiresAt}`
+  const signature = createHmac('sha256', ADMIN_PASSWORD).update(payload).digest('hex')
+  return `${payload}.${signature}`
+}
+
+function verifyAdminToken(token) {
+  const parts = token.split('.')
+  if (parts.length !== 3 || parts[0] !== 'admin') return false
+  const [prefix, expiresAtStr, signature] = parts
+  const expiresAt = Number(expiresAtStr)
+  if (!Number.isFinite(expiresAt) || Date.now() > expiresAt) return false
+
+  const expected = createHmac('sha256', ADMIN_PASSWORD).update(`${prefix}.${expiresAtStr}`).digest('hex')
+  const expectedBuf = Buffer.from(expected, 'hex')
+  const actualBuf = Buffer.from(signature, 'hex')
+  if (expectedBuf.length !== actualBuf.length) return false
+  return timingSafeEqual(expectedBuf, actualBuf)
+}
 
 function requireAdmin(req, res, next) {
   const authHeader = req.headers.authorization || ''
   const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null
 
-  if (!token || !validAdminTokens.has(token)) {
+  if (!token || !verifyAdminToken(token)) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
@@ -63,8 +84,7 @@ app.post('/api/admin/login', (req, res) => {
     }
 
     if (password === ADMIN_PASSWORD) {
-      const token = 'admin_' + randomBytes(32).toString('hex')
-      validAdminTokens.add(token)
+      const token = signAdminToken(Date.now() + ADMIN_TOKEN_TTL_MS)
       res.json({
         token,
         message: '로그인 성공'

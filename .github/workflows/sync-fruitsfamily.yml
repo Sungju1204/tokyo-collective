@@ -1,0 +1,15 @@
+name: Sync FruitsFamily listings
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call sync endpoint
+        run: |
+          curl -sf -X POST https://tokyo-collective.vercel.app/api/admin/sync-fruitsfamily \
+            -H "x-sync-secret: ${{ secrets.SYNC_SECRET }}"

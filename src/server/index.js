@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { createHmac, timingSafeEqual } from 'crypto'
 import db, { initializeDatabase } from './db.js'
+import { fetchProductFromFruits, FruitsImportError } from './fruitsImport.js'
 
 try {
   process.loadEnvFile()
@@ -202,78 +203,15 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// Import product info from an external listing URL (admin) - currently
-// supports fruitsfamily.com product pages via their JSON-LD Product block.
-const IMPORT_ALLOWED_HOSTS = ['fruitsfamily.com', 'www.fruitsfamily.com']
-const CATEGORY_MAP = {
-  '아우터': 'Outer',
-  '상의': 'Top',
-  '하의': 'Bottom',
-  '팬츠': 'Bottom',
-  '신발': 'Acc',
-  '잡화': 'Acc',
-  '가방': 'Acc',
-  '액세서리': 'Acc'
-}
-
 app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
   try {
     const { url } = req.body
-    let parsedUrl
-    try {
-      parsedUrl = new URL(url)
-    } catch {
-      return res.status(400).json({ error: '올바른 URL이 아닙니다' })
-    }
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      return res.status(400).json({ error: '올바른 URL이 아닙니다' })
-    }
-    if (!IMPORT_ALLOWED_HOSTS.includes(parsedUrl.hostname)) {
-      return res.status(400).json({ error: '지원하지 않는 사이트입니다 (fruitsfamily.com만 지원)' })
-    }
-
-    // redirect: 'manual' so a redirect off fruitsfamily.com (e.g. to an
-    // internal address) can't silently bypass the host allowlist above.
-    const pageResponse = await fetch(parsedUrl.toString(), {
-      redirect: 'manual',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TokyoCollectiveBot/1.0)' }
-    })
-    if (pageResponse.type === 'opaqueredirect' || (pageResponse.status >= 300 && pageResponse.status < 400)) {
-      return res.status(502).json({ error: '이 링크는 다른 주소로 리다이렉트되어 처리할 수 없습니다' })
-    }
-    if (!pageResponse.ok) {
-      return res.status(502).json({ error: '상품 페이지를 불러오지 못했습니다' })
-    }
-    const html = await pageResponse.text()
-
-    const ldJsonBlocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)]
-    let productData = null
-    for (const block of ldJsonBlocks) {
-      try {
-        const parsed = JSON.parse(block[1])
-        if (parsed['@type'] === 'Product') {
-          productData = parsed
-          break
-        }
-      } catch {
-        // skip malformed block
-      }
-    }
-
-    if (!productData) {
-      return res.status(422).json({ error: '상품 정보를 찾지 못했습니다' })
-    }
-
-    res.json({
-      name: productData.name || '',
-      price: productData.offers?.price ?? '',
-      description: productData.description || '',
-      image_url: Array.isArray(productData.image) ? productData.image[0] : productData.image || '',
-      category: CATEGORY_MAP[productData.category] || 'Top',
-      size: productData.size || '',
-      external_url: parsedUrl.toString()
-    })
+    const product = await fetchProductFromFruits(url)
+    res.json(product)
   } catch (err) {
+    if (err instanceof FruitsImportError) {
+      return res.status(err.status).json({ error: err.message })
+    }
     console.error('Product import error:', err)
     res.status(500).json({ error: '상품 정보를 가져오지 못했습니다' })
   }

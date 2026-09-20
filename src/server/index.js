@@ -37,11 +37,10 @@ if (!ADMIN_PASSWORD) {
   process.exit(1)
 }
 
+// Optional: only the FruitsFamily sync endpoint needs this. Every API route
+// boots from this module, so a missing SYNC_SECRET must not take the whole app
+// down - the sync route returns 503 instead (see requireSyncSecret).
 const SYNC_SECRET = process.env.SYNC_SECRET
-if (!SYNC_SECRET) {
-  console.error('❌ SYNC_SECRET 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.')
-  process.exit(1)
-}
 
 // Self-verifying tokens (HMAC-signed, expiry embedded) rather than a server-side
 // session store, since Vercel routes requests across multiple stateless instances
@@ -80,6 +79,9 @@ function requireAdmin(req, res, next) {
 }
 
 function requireSyncSecret(req, res, next) {
+  if (!SYNC_SECRET) {
+    return res.status(503).json({ error: '동기화 기능이 설정되지 않았습니다' })
+  }
   const provided = req.headers['x-sync-secret'] || ''
   const expectedBuf = Buffer.from(SYNC_SECRET)
   const providedBuf = Buffer.from(provided)
@@ -235,6 +237,12 @@ app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
 
 const SELLER_URL = 'https://fruitsfamily.com/seller/i9za/joongojoah'
 
+// Since new listings are auto-published with no review queue, bound how many a
+// single run can publish. A markup change that starts matching links outside
+// the seller's own grid then shows up as a bounded, reported number rather than
+// an unlimited silent blow-out.
+const MAX_IMPORTS_PER_RUN = 20
+
 app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => {
   try {
     const listings = await listNewFruitsListings(SELLER_URL)
@@ -244,21 +252,28 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       existingRows.map(row => extractProductId(row.external_url)).filter(Boolean)
     )
     const candidates = listings.filter(listing => !existingIds.has(listing.id))
+    const toImport = candidates.slice(0, MAX_IMPORTS_PER_RUN)
+    const deferred = candidates.length - toImport.length
 
     const imported = []
     const skipped = []
 
-    for (const candidate of candidates) {
+    for (const candidate of toImport) {
       try {
         const product = await fetchProductFromFruits(candidate.url)
+        if (!product.name || !Number.isFinite(Number(product.price)) || Number(product.price) < 0) {
+          skipped.push({ url: candidate.url, reason: '상품명 또는 가격 정보가 올바르지 않습니다' })
+          continue
+        }
         const result = await run(
-          `INSERT INTO products (name, price, category, stock, external_url, image_url, description, size)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO products (name, price, category, stock, placeholderColor, external_url, image_url, description, size)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             product.name,
             Number(product.price) || 0,
             product.category,
-            1,
+            product.available ? 1 : 0,
+            '#1a1a1a',
             product.external_url,
             product.image_url || null,
             product.description || null,
@@ -271,9 +286,19 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       }
     }
 
-    res.json({ imported, skipped })
+    // Lands in Vercel's function logs so "0 imported, nothing new" can be told
+    // apart from "0 imported, every insert failed".
+    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred`
+    if (skipped.length > 0) {
+      console.error(summary, skipped)
+    } else {
+      console.log(summary)
+    }
+
+    res.json({ imported, skipped, deferred })
   } catch (err) {
     if (err instanceof FruitsImportError) {
+      console.error(`FruitsFamily sync aborted (${err.status}): ${err.message}`)
       return res.status(err.status).json({ error: err.message })
     }
     console.error('FruitsFamily sync error:', err)

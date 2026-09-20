@@ -88,6 +88,21 @@ export async function initializeDatabase() {
     }
   }
 
+  // One listing = one product row. Guards against overlapping sync runs (e.g. a
+  // manual workflow_dispatch landing on top of the next scheduled tick)
+  // double-inserting the same listing. NULLs don't collide, so manually created
+  // products without an external_url are unaffected.
+  // Tolerate failure: if a pre-existing DB already holds duplicate
+  // external_urls the index can't be built, and that must not take down every
+  // other route that boots through this module.
+  try {
+    await db.execute(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_products_external_url ON products(external_url) WHERE external_url IS NOT NULL'
+    )
+  } catch (err) {
+    console.error('⚠️ external_url 유니크 인덱스를 만들지 못했습니다 (중복 데이터 확인 필요):', err.message)
+  }
+
   // Check if shipping methods exist
   const shippingCount = await db.execute('SELECT COUNT(*) as count FROM shipping_methods')
 

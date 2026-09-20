@@ -14,12 +14,44 @@ const PRODUCT_HTML = `
 </head><body></body></html>
 `
 
+const SOLD_OUT_PRODUCT_HTML = `
+<html><head>
+<script type="application/ld+json">
+{"@type":"Product","name":"품절 상품","offers":{"price":"50000","availability":"https://schema.org/SoldOut"},"category":"상의"}
+</script>
+</head><body></body></html>
+`
+
+const IN_STOCK_PRODUCT_HTML = `
+<html><head>
+<script type="application/ld+json">
+{"@type":"Product","name":"재고 있는 상품","offers":{"price":"50000","availability":"https://schema.org/InStock"},"category":"상의"}
+</script>
+</head><body></body></html>
+`
+
+const OUT_OF_STOCK_PRODUCT_HTML = `
+<html><head>
+<script type="application/ld+json">
+{"@type":"Product","name":"재고 없는 상품","offers":{"price":"50000","availability":"http://schema.org/OutOfStock"},"category":"상의"}
+</script>
+</head><body></body></html>
+`
+
 const SELLER_HTML = `
 <html><body>
 <a href="/product/5pijr/%EC%8A%88%ED%94%84%EB%A6%BC-%EC%A1%B0%EB%8B%A8">item</a>
 <a href="/product/9xk2q/%EB%98%90%EB%8B%A4%EB%A5%B8-%EC%83%81%ED%92%88">item</a>
 <a href="/product/5pijr/%EC%8A%88%ED%94%84%EB%A6%BC-%EC%A1%B0%EB%8B%A8">duplicate</a>
 <a href="/seller/i9za/joongojoah">not a product link</a>
+</body></html>
+`
+
+const SELLER_HTML_MIXED_HREF_STYLES = `
+<html><body>
+<a href='/product/5pijr/single-quoted'>item</a>
+<a href="https://fruitsfamily.com/product/9xk2q/absolute">item</a>
+<a href="https://www.fruitsfamily.com/product/abc12/absolute-www">item</a>
 </body></html>
 `
 
@@ -63,8 +95,52 @@ describe('fetchProductFromFruits', () => {
       image_url: 'https://img.fruitsfamily.com/5pijr-1.jpg',
       category: 'Outer',
       size: 'L',
+      available: true,
       external_url: 'https://fruitsfamily.com/product/5pijr/name'
     })
+  })
+
+  it('reports available: false when availability says sold out', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => SOLD_OUT_PRODUCT_HTML })
+
+    const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
+
+    expect(product.available).toBe(false)
+  })
+
+  it('reports available: false when availability says out of stock', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => OUT_OF_STOCK_PRODUCT_HTML })
+
+    const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
+
+    expect(product.available).toBe(false)
+  })
+
+  it('reports available: true when availability says in stock', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => IN_STOCK_PRODUCT_HTML })
+
+    const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
+
+    expect(product.available).toBe(true)
+  })
+
+  it('defaults to available: true when the availability field is absent', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => PRODUCT_HTML })
+
+    const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
+
+    expect(product.available).toBe(true)
+  })
+
+  it('passes an abort signal so a hung connection cannot stall the run', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => PRODUCT_HTML })
+
+    await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
+
+    expect(fetch).toHaveBeenCalledWith(
+      'https://fruitsfamily.com/product/5pijr/name',
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    )
   })
 
   it('rejects a non-fruitsfamily host', async () => {
@@ -94,9 +170,29 @@ describe('listNewFruitsListings', () => {
     ])
   })
 
-  it('returns an empty array when the page has no product links', async () => {
+  it('matches single-quoted and absolute hrefs too', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => SELLER_HTML_MIXED_HREF_STYLES })
+
+    const listings = await listNewFruitsListings('https://fruitsfamily.com/seller/i9za/joongojoah')
+
+    expect(listings).toEqual([
+      { id: '5pijr', url: 'https://fruitsfamily.com/product/5pijr/single-quoted' },
+      { id: '9xk2q', url: 'https://fruitsfamily.com/product/9xk2q/absolute' },
+      { id: 'abc12', url: 'https://fruitsfamily.com/product/abc12/absolute-www' }
+    ])
+  })
+
+  it('throws a 502 rather than succeeding silently when no product links match', async () => {
     fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => '<html></html>' })
-    expect(await listNewFruitsListings('https://fruitsfamily.com/seller/i9za/joongojoah')).toEqual([])
+
+    await expect(listNewFruitsListings('https://fruitsfamily.com/seller/i9za/joongojoah')).rejects.toMatchObject({
+      name: 'FruitsImportError',
+      status: 502,
+      message: '셀러 페이지에서 상품 링크를 찾지 못했습니다'
+    })
+    await expect(
+      listNewFruitsListings('https://fruitsfamily.com/seller/i9za/joongojoah')
+    ).rejects.toBeInstanceOf(FruitsImportError)
   })
 
   it('throws when the seller page fetch fails', async () => {

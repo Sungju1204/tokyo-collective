@@ -1,5 +1,8 @@
 export const IMPORT_ALLOWED_HOSTS = ['fruitsfamily.com', 'www.fruitsfamily.com']
 
+// Per-request timeout for outbound calls to fruitsfamily.com.
+const FETCH_TIMEOUT_MS = 10_000
+
 const CATEGORY_MAP = {
   '아우터': 'Outer',
   '상의': 'Top',
@@ -40,7 +43,10 @@ async function fetchFruitsPage(parsedUrl, notFoundMessage) {
   // internal address) can't silently bypass the host allowlist above.
   const pageResponse = await fetch(parsedUrl.toString(), {
     redirect: 'manual',
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TokyoCollectiveBot/1.0)' }
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TokyoCollectiveBot/1.0)' },
+    // Bound each outbound request so a hung connection to fruitsfamily.com
+    // can't stall the whole sync run until the platform kills it.
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
   })
   if (pageResponse.type === 'opaqueredirect' || (pageResponse.status >= 300 && pageResponse.status < 400)) {
     throw new FruitsImportError('이 링크는 다른 주소로 리다이렉트되어 처리할 수 없습니다', 502)
@@ -78,6 +84,12 @@ export async function fetchProductFromFruits(urlString) {
     throw new FruitsImportError('상품 정보를 찾지 못했습니다', 422)
   }
 
+  // schema.org availability is usually a URL like https://schema.org/InStock or
+  // https://schema.org/SoldOut. Treat an absent field as available, since most
+  // listings don't carry it and absence shouldn't block a sale.
+  const availability = String(productData.offers?.availability || '').toLowerCase()
+  const available = !availability.includes('soldout') && !availability.includes('outofstock')
+
   return {
     name: productData.name || '',
     price: productData.offers?.price ?? '',
@@ -85,6 +97,7 @@ export async function fetchProductFromFruits(urlString) {
     image_url: Array.isArray(productData.image) ? productData.image[0] : productData.image || '',
     category: CATEGORY_MAP[productData.category] || 'Top',
     size: productData.size || '',
+    available,
     external_url: parsedUrl.toString()
   }
 }
@@ -93,7 +106,18 @@ export async function listNewFruitsListings(sellerUrl) {
   const parsedUrl = assertAllowedFruitsUrl(sellerUrl)
   const html = await fetchFruitsPage(parsedUrl, '셀러 페이지를 불러오지 못했습니다')
 
-  const linkMatches = [...html.matchAll(/href="(\/product\/[a-zA-Z0-9]+\/[^"]*)"/g)]
+  // Accept single- or double-quoted hrefs, relative or absolute, so a small
+  // markup change doesn't silently produce zero matches.
+  const linkMatches = [
+    ...html.matchAll(/href=["'](?:https?:\/\/(?:www\.)?fruitsfamily\.com)?(\/product\/[a-zA-Z0-9]+\/[^"']*)["']/g)
+  ]
+  if (linkMatches.length === 0) {
+    // Zero matches means the markup drifted (or the page failed to render its
+    // grid) far more often than it means the seller has no listings at all.
+    // Per the spec, that's a 502 rather than a silent successful no-op.
+    throw new FruitsImportError('셀러 페이지에서 상품 링크를 찾지 못했습니다', 502)
+  }
+
   const seen = new Set()
   const listings = []
   for (const match of linkMatches) {

@@ -2,7 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { createHmac, timingSafeEqual } from 'crypto'
 import db, { initializeDatabase } from './db.js'
-import { fetchProductFromFruits, FruitsImportError } from './fruitsImport.js'
+import { fetchProductFromFruits, listNewFruitsListings, extractProductId, FruitsImportError } from './fruitsImport.js'
 
 try {
   process.loadEnvFile()
@@ -34,6 +34,12 @@ await initializeDatabase()
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD
 if (!ADMIN_PASSWORD) {
   console.error('❌ ADMIN_PASSWORD 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.')
+  process.exit(1)
+}
+
+const SYNC_SECRET = process.env.SYNC_SECRET
+if (!SYNC_SECRET) {
+  console.error('❌ SYNC_SECRET 환경변수가 설정되지 않았습니다. .env 파일을 확인하세요.')
   process.exit(1)
 }
 
@@ -70,6 +76,16 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
+  next()
+}
+
+function requireSyncSecret(req, res, next) {
+  const provided = req.headers['x-sync-secret'] || ''
+  const expectedBuf = Buffer.from(SYNC_SECRET)
+  const providedBuf = Buffer.from(provided)
+  if (expectedBuf.length !== providedBuf.length || !timingSafeEqual(expectedBuf, providedBuf)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
   next()
 }
 
@@ -214,6 +230,54 @@ app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
     }
     console.error('Product import error:', err)
     res.status(500).json({ error: '상품 정보를 가져오지 못했습니다' })
+  }
+})
+
+const SELLER_URL = 'https://fruitsfamily.com/seller/i9za/joongojoah'
+
+app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => {
+  try {
+    const listings = await listNewFruitsListings(SELLER_URL)
+
+    const existingRows = await all('SELECT external_url FROM products WHERE external_url IS NOT NULL')
+    const existingIds = new Set(
+      existingRows.map(row => extractProductId(row.external_url)).filter(Boolean)
+    )
+    const candidates = listings.filter(listing => !existingIds.has(listing.id))
+
+    const imported = []
+    const skipped = []
+
+    for (const candidate of candidates) {
+      try {
+        const product = await fetchProductFromFruits(candidate.url)
+        const result = await run(
+          `INSERT INTO products (name, price, category, stock, external_url, image_url, description, size)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            product.name,
+            Number(product.price) || 0,
+            product.category,
+            1,
+            product.external_url,
+            product.image_url || null,
+            product.description || null,
+            product.size || null
+          ]
+        )
+        imported.push({ id: Number(result.lastInsertRowid), name: product.name, external_url: product.external_url })
+      } catch (err) {
+        skipped.push({ url: candidate.url, reason: err.message })
+      }
+    }
+
+    res.json({ imported, skipped })
+  } catch (err) {
+    if (err instanceof FruitsImportError) {
+      return res.status(err.status).json({ error: err.message })
+    }
+    console.error('FruitsFamily sync error:', err)
+    res.status(500).json({ error: '동기화에 실패했습니다' })
   }
 })
 

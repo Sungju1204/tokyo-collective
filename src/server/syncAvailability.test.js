@@ -3,13 +3,21 @@ import { syncAvailability } from './syncAvailability.js'
 
 const FF = 'https://fruitsfamily.com/product'
 
-function makeDeps({ rows, fetchProduct, markSoldOut, markInStock } = {}) {
+function makeDeps({ rows, fetchProduct, markSoldOut, markInStock, deleteProduct } = {}) {
   return {
     listLinked: vi.fn(async () => rows),
     fetchProduct: fetchProduct ?? vi.fn(async () => ({ available: true, availabilityKnown: true })),
     markSoldOut: markSoldOut ?? vi.fn(async () => {}),
-    markInStock: markInStock ?? vi.fn(async () => {})
+    markInStock: markInStock ?? vi.fn(async () => {}),
+    deleteProduct: deleteProduct ?? vi.fn(async () => {})
   }
+}
+
+// What fetchProductFromFruits throws: `gone: true` when the listing no longer
+// exists on FruitsFamily (404/410, or a page with no product data), `gone: false`
+// for any other failure (500, timeout, ...).
+function fetchError(gone, message = 'page failed') {
+  return Object.assign(new Error(message), { gone })
 }
 
 const inStock = (id, extra = {}) => ({ id, name: `P${id}`, external_url: `${FF}/id${id}/x`, inStock: true, ...extra })
@@ -181,5 +189,126 @@ describe('syncAvailability: scope and limits', () => {
 
     expect(fetchProduct).toHaveBeenCalledTimes(12)
     expect(peak).toBeLessThanOrEqual(4)
+  })
+})
+
+describe('syncAvailability: deleting removed listings', () => {
+  // A listing counts as removed only when BOTH signals agree: its page is gone
+  // (404/410) AND it no longer appears on the seller page. Sold items stay on
+  // the seller page, so being absent from it is a strong "deleted" signal.
+  const gone = vi.fn(async () => {
+    throw fetchError(true)
+  })
+
+  it('deletes a product whose page is 404 and that is no longer on the seller page', async () => {
+    const deps = makeDeps({ rows: [inStock(1, { name: '삭제된 상품' })], fetchProduct: gone })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set(['id2']) })
+
+    expect(deps.deleteProduct).toHaveBeenCalledWith(1)
+    expect(result.deleted).toEqual([{ id: 1, name: '삭제된 상품' }])
+    expect(result.skipped).toEqual([])
+  })
+
+  it('also deletes a sold-out product that was removed', async () => {
+    const deps = makeDeps({ rows: [soldOut(1)], fetchProduct: gone })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set() })
+
+    expect(deps.deleteProduct).toHaveBeenCalledWith(1)
+    expect(result.deleted).toHaveLength(1)
+  })
+
+  it('keeps a product whose page is 404 but that is still on the seller page', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: gone })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set(['id1']) })
+
+    expect(deps.deleteProduct).not.toHaveBeenCalled()
+    expect(result.deleted).toEqual([])
+    expect(result.skipped).toHaveLength(1)
+  })
+
+  it('keeps a product that is missing from the seller page but whose page still loads', async () => {
+    const deps = makeDeps({ rows: [inStock(1)] })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set(['id2']) })
+
+    expect(deps.deleteProduct).not.toHaveBeenCalled()
+    expect(result.deleted).toEqual([])
+  })
+
+  it('never deletes when the seller page could not be read (no listedIds)', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: gone })
+
+    const result = await syncAvailability(deps)
+
+    expect(deps.deleteProduct).not.toHaveBeenCalled()
+    expect(result.deleted).toEqual([])
+    expect(result.skipped).toHaveLength(1)
+  })
+
+  it('never deletes on a failure that is not "gone" (timeout, 500), even if unlisted', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1), inStock(2)],
+      fetchProduct: vi.fn(async url => {
+        throw url.includes('id1') ? fetchError(false) : new Error('timeout')
+      })
+    })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set() })
+
+    expect(deps.deleteProduct).not.toHaveBeenCalled()
+    expect(result.deleted).toEqual([])
+    expect(result.skipped).toHaveLength(2)
+  })
+
+  it('refuses to delete anything when more than maxDeletes look removed at once', async () => {
+    const rows = [inStock(1), inStock(2), inStock(3), inStock(4)]
+    const deps = makeDeps({ rows, fetchProduct: gone })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set(), maxDeletes: 3 })
+
+    expect(deps.deleteProduct).not.toHaveBeenCalled()
+    expect(result.deleted).toEqual([])
+    expect(result.deleteSuppressed.map(p => p.id)).toEqual([1, 2, 3, 4])
+  })
+
+  it('deletes when the number of removed listings is exactly maxDeletes', async () => {
+    const rows = [inStock(1), inStock(2), inStock(3)]
+    const deps = makeDeps({ rows, fetchProduct: gone })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set(), maxDeletes: 3 })
+
+    expect(deps.deleteProduct).toHaveBeenCalledTimes(3)
+    expect(result.deleted).toHaveLength(3)
+    expect(result.deleteSuppressed).toEqual([])
+  })
+
+  it('reports a failed database delete as skipped, not as deleted', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1)],
+      fetchProduct: gone,
+      deleteProduct: vi.fn(async () => {
+        throw new Error('db down')
+      })
+    })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set() })
+
+    expect(result.deleted).toEqual([])
+    expect(result.skipped[0].reason).toBe('db down')
+  })
+
+  it('does not treat a link without a product id as deletable', async () => {
+    const deps = makeDeps({
+      rows: [{ id: 1, name: 'A', external_url: 'https://fruitsfamily.com/seller/i9za', inStock: true }],
+      fetchProduct: gone
+    })
+
+    const result = await syncAvailability({ ...deps, listedIds: new Set() })
+
+    expect(deps.deleteProduct).not.toHaveBeenCalled()
+    expect(result.deleted).toEqual([])
   })
 })

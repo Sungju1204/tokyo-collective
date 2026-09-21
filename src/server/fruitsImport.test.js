@@ -161,6 +161,38 @@ describe('fetchProductFromFruits', () => {
     fetch.mockResolvedValue({ ok: false, type: 'basic', status: 500 })
     await expect(fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')).rejects.toBeInstanceOf(FruitsImportError)
   })
+
+  // `gone` tells callers a listing no longer exists on FruitsFamily, as opposed
+  // to one that merely failed to load right now.
+  it.each([404, 410])('flags a %i response as gone, keeping our own status 502', async status => {
+    fetch.mockResolvedValue({ ok: false, type: 'basic', status })
+    await expect(fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')).rejects.toMatchObject({
+      name: 'FruitsImportError',
+      status: 502,
+      upstreamStatus: status,
+      gone: true
+    })
+  })
+
+  it.each([500, 503, 429])('does not flag a %i response as gone', async status => {
+    fetch.mockResolvedValue({ ok: false, type: 'basic', status })
+    await expect(fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')).rejects.toMatchObject({
+      status: 502,
+      upstreamStatus: status,
+      gone: false
+    })
+  })
+
+  // FruitsFamily answers 200 with a page that has no product data for a
+  // product id that does not exist (a "soft 404"), so a removed listing can look
+  // like this rather than like a 404.
+  it('flags a 200 page with no product data as gone', async () => {
+    fetch.mockResolvedValue({ ok: true, type: 'basic', status: 200, text: async () => '<html></html>' })
+    await expect(fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')).rejects.toMatchObject({
+      status: 422,
+      gone: true
+    })
+  })
 })
 
 describe('listNewFruitsListings', () => {

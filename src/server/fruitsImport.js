@@ -15,10 +15,16 @@ const CATEGORY_MAP = {
 }
 
 export class FruitsImportError extends Error {
-  constructor(message, status) {
+  // `status` is what our own API answers with. `upstreamStatus` is what
+  // FruitsFamily answered with, when it did. `gone` is true when the listing no
+  // longer exists there (404/410, or a page with no product data), as opposed to
+  // one that merely failed to load right now (500, timeout, rate limit).
+  constructor(message, status, { upstreamStatus, gone = false } = {}) {
     super(message)
     this.name = 'FruitsImportError'
     this.status = status
+    this.upstreamStatus = upstreamStatus
+    this.gone = gone
   }
 }
 
@@ -52,7 +58,10 @@ async function fetchFruitsPage(parsedUrl, notFoundMessage) {
     throw new FruitsImportError('이 링크는 다른 주소로 리다이렉트되어 처리할 수 없습니다', 502)
   }
   if (!pageResponse.ok) {
-    throw new FruitsImportError(notFoundMessage, 502)
+    throw new FruitsImportError(notFoundMessage, 502, {
+      upstreamStatus: pageResponse.status,
+      gone: pageResponse.status === 404 || pageResponse.status === 410
+    })
   }
   return pageResponse.text()
 }
@@ -81,7 +90,10 @@ export async function fetchProductFromFruits(urlString) {
   }
 
   if (!productData) {
-    throw new FruitsImportError('상품 정보를 찾지 못했습니다', 422)
+    // FruitsFamily serves a 200 page with no product data for an id that does not
+    // exist, so this is also how a removed listing can look. Whether it really
+    // means "removed" is decided by the caller with a second signal.
+    throw new FruitsImportError('상품 정보를 찾지 못했습니다', 422, { gone: true })
   }
 
   // schema.org availability is usually a URL like https://schema.org/InStock or

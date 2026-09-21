@@ -245,12 +245,24 @@ const SELLER_URL = 'https://fruitsfamily.com/seller/i9za/joongojoah'
 const MAX_IMPORTS_PER_RUN = 20
 
 app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => {
-  // Mirror FruitsFamily's sold-out / back-in-stock state onto products we already
-  // have. Runs first and on its own so a seller-page parse failure below can't
-  // block it.
-  let availability = { soldOut: [], restocked: [], skipped: [], unchecked: 0 }
+  // Read the seller page once up front: it drives both the delete check (a
+  // product missing from it has been removed) and the new-listing import below.
+  // A failure is held and rethrown later so the availability sync still runs.
+  let listings = null
+  let listingsError = null
+  try {
+    listings = await listNewFruitsListings(SELLER_URL)
+  } catch (err) {
+    listingsError = err
+  }
+
+  // Mirror FruitsFamily's sold-out / back-in-stock / removed state onto products
+  // we already have. Independent of the import step, so a seller-page parse
+  // failure can't block it (it just skips deletions, which need that page).
+  let availability = { soldOut: [], restocked: [], deleted: [], deleteSuppressed: [], skipped: [], unchecked: 0 }
   try {
     availability = await syncAvailability({
+      listedIds: listings ? new Set(listings.map(listing => listing.id)) : undefined,
       listLinked: async () => {
         const rows = await all(
           `SELECT id, name, external_url,
@@ -263,14 +275,15 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       markSoldOut: id => run('UPDATE products SET stock = 0 WHERE id = ?', [id]),
       // Restocking also clears the legacy soldOut flag, which would otherwise
       // keep the product showing as sold out.
-      markInStock: id => run('UPDATE products SET stock = 1, soldOut = 0 WHERE id = ?', [id])
+      markInStock: id => run('UPDATE products SET stock = 1, soldOut = 0 WHERE id = ?', [id]),
+      deleteProduct: id => run('DELETE FROM products WHERE id = ?', [id])
     })
   } catch (err) {
-    console.error('FruitsFamily sold-out check failed:', err)
+    console.error('FruitsFamily availability sync failed:', err)
   }
 
   try {
-    const listings = await listNewFruitsListings(SELLER_URL)
+    if (listingsError) throw listingsError
 
     const existingRows = await all('SELECT external_url FROM products WHERE external_url IS NOT NULL')
     const existingIds = new Set(
@@ -313,7 +326,15 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
 
     // Lands in Vercel's function logs so "0 imported, nothing new" can be told
     // apart from "0 imported, every insert failed".
-    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred, ${availability.soldOut.length} sold out, ${availability.restocked.length} restocked`
+    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred, ${availability.soldOut.length} sold out, ${availability.restocked.length} restocked, ${availability.deleted.length} deleted`
+    // Deleted products are logged by name: the row is gone, so this is the only
+    // record of what was removed.
+    if (availability.deleted.length > 0) {
+      console.warn('FruitsFamily sync deleted products:', availability.deleted)
+    }
+    if (availability.deleteSuppressed.length > 0) {
+      console.error('FruitsFamily sync held back deletions (too many at once):', availability.deleteSuppressed)
+    }
     if (skipped.length > 0 || availability.skipped.length > 0) {
       console.error(summary, { skipped, availabilitySkipped: availability.skipped })
     } else {
@@ -326,6 +347,8 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       deferred,
       soldOut: availability.soldOut,
       restocked: availability.restocked,
+      deleted: availability.deleted,
+      deleteSuppressed: availability.deleteSuppressed,
       availabilitySkipped: availability.skipped,
       availabilityUnchecked: availability.unchecked
     })
@@ -336,7 +359,8 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       return res.status(err.status).json({
         error: err.message,
         soldOut: availability.soldOut,
-        restocked: availability.restocked
+        restocked: availability.restocked,
+        deleted: availability.deleted
       })
     }
     console.error('FruitsFamily sync error:', err)

@@ -2,7 +2,10 @@ name: Sync FruitsFamily listings
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    # Every ~15 minutes, but deliberately off the :00/:15/:30/:45 marks. GitHub
+    # delays or drops scheduled runs when load is high, and those marks are the
+    # busiest; the */15 form produced no scheduled run at all for hours.
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch: {}
 
 permissions: {}

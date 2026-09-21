@@ -2,6 +2,7 @@ import express from 'express'
 import cors from 'cors'
 import { createHmac, timingSafeEqual } from 'crypto'
 import db, { initializeDatabase } from './db.js'
+import { fetchProductFromFruits, listNewFruitsListings, extractProductId, FruitsImportError } from './fruitsImport.js'
 
 try {
   process.loadEnvFile()
@@ -36,6 +37,11 @@ if (!ADMIN_PASSWORD) {
   process.exit(1)
 }
 
+// Optional: only the FruitsFamily sync endpoint needs this. Every API route
+// boots from this module, so a missing SYNC_SECRET must not take the whole app
+// down - the sync route returns 503 instead (see requireSyncSecret).
+const SYNC_SECRET = process.env.SYNC_SECRET
+
 // Self-verifying tokens (HMAC-signed, expiry embedded) rather than a server-side
 // session store, since Vercel routes requests across multiple stateless instances
 // that don't share in-memory state.
@@ -69,6 +75,19 @@ function requireAdmin(req, res, next) {
     return res.status(401).json({ error: 'Unauthorized' })
   }
 
+  next()
+}
+
+function requireSyncSecret(req, res, next) {
+  if (!SYNC_SECRET) {
+    return res.status(503).json({ error: '동기화 기능이 설정되지 않았습니다' })
+  }
+  const provided = req.headers['x-sync-secret'] || ''
+  const expectedBuf = Buffer.from(SYNC_SECRET)
+  const providedBuf = Buffer.from(provided)
+  if (expectedBuf.length !== providedBuf.length || !timingSafeEqual(expectedBuf, providedBuf)) {
+    return res.status(401).json({ error: 'Unauthorized' })
+  }
   next()
 }
 
@@ -202,80 +221,88 @@ app.patch('/api/products/:id', requireAdmin, async (req, res) => {
   }
 })
 
-// Import product info from an external listing URL (admin) - currently
-// supports fruitsfamily.com product pages via their JSON-LD Product block.
-const IMPORT_ALLOWED_HOSTS = ['fruitsfamily.com', 'www.fruitsfamily.com']
-const CATEGORY_MAP = {
-  '아우터': 'Outer',
-  '상의': 'Top',
-  '하의': 'Bottom',
-  '팬츠': 'Bottom',
-  '신발': 'Acc',
-  '잡화': 'Acc',
-  '가방': 'Acc',
-  '액세서리': 'Acc'
-}
-
 app.post('/api/admin/import-product', requireAdmin, async (req, res) => {
   try {
     const { url } = req.body
-    let parsedUrl
-    try {
-      parsedUrl = new URL(url)
-    } catch {
-      return res.status(400).json({ error: '올바른 URL이 아닙니다' })
+    const product = await fetchProductFromFruits(url)
+    res.json(product)
+  } catch (err) {
+    if (err instanceof FruitsImportError) {
+      return res.status(err.status).json({ error: err.message })
     }
-    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-      return res.status(400).json({ error: '올바른 URL이 아닙니다' })
-    }
-    if (!IMPORT_ALLOWED_HOSTS.includes(parsedUrl.hostname)) {
-      return res.status(400).json({ error: '지원하지 않는 사이트입니다 (fruitsfamily.com만 지원)' })
-    }
+    console.error('Product import error:', err)
+    res.status(500).json({ error: '상품 정보를 가져오지 못했습니다' })
+  }
+})
 
-    // redirect: 'manual' so a redirect off fruitsfamily.com (e.g. to an
-    // internal address) can't silently bypass the host allowlist above.
-    const pageResponse = await fetch(parsedUrl.toString(), {
-      redirect: 'manual',
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; TokyoCollectiveBot/1.0)' }
-    })
-    if (pageResponse.type === 'opaqueredirect' || (pageResponse.status >= 300 && pageResponse.status < 400)) {
-      return res.status(502).json({ error: '이 링크는 다른 주소로 리다이렉트되어 처리할 수 없습니다' })
-    }
-    if (!pageResponse.ok) {
-      return res.status(502).json({ error: '상품 페이지를 불러오지 못했습니다' })
-    }
-    const html = await pageResponse.text()
+const SELLER_URL = 'https://fruitsfamily.com/seller/i9za/joongojoah'
 
-    const ldJsonBlocks = [...html.matchAll(/<script[^>]*type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g)]
-    let productData = null
-    for (const block of ldJsonBlocks) {
+// Since new listings are auto-published with no review queue, bound how many a
+// single run can publish. A markup change that starts matching links outside
+// the seller's own grid then shows up as a bounded, reported number rather than
+// an unlimited silent blow-out.
+const MAX_IMPORTS_PER_RUN = 20
+
+app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => {
+  try {
+    const listings = await listNewFruitsListings(SELLER_URL)
+
+    const existingRows = await all('SELECT external_url FROM products WHERE external_url IS NOT NULL')
+    const existingIds = new Set(
+      existingRows.map(row => extractProductId(row.external_url)).filter(Boolean)
+    )
+    const candidates = listings.filter(listing => !existingIds.has(listing.id))
+    const toImport = candidates.slice(0, MAX_IMPORTS_PER_RUN)
+    const deferred = candidates.length - toImport.length
+
+    const imported = []
+    const skipped = []
+
+    for (const candidate of toImport) {
       try {
-        const parsed = JSON.parse(block[1])
-        if (parsed['@type'] === 'Product') {
-          productData = parsed
-          break
+        const product = await fetchProductFromFruits(candidate.url)
+        if (!product.name || !Number.isFinite(Number(product.price)) || Number(product.price) < 0) {
+          skipped.push({ url: candidate.url, reason: '상품명 또는 가격 정보가 올바르지 않습니다' })
+          continue
         }
-      } catch {
-        // skip malformed block
+        const result = await run(
+          `INSERT INTO products (name, price, category, stock, placeholderColor, external_url, image_url, description, size)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            product.name,
+            Number(product.price) || 0,
+            product.category,
+            product.available ? 1 : 0,
+            '#1a1a1a',
+            product.external_url,
+            product.image_url || null,
+            product.description || null,
+            product.size || null
+          ]
+        )
+        imported.push({ id: Number(result.lastInsertRowid), name: product.name, external_url: product.external_url })
+      } catch (err) {
+        skipped.push({ url: candidate.url, reason: err.message })
       }
     }
 
-    if (!productData) {
-      return res.status(422).json({ error: '상품 정보를 찾지 못했습니다' })
+    // Lands in Vercel's function logs so "0 imported, nothing new" can be told
+    // apart from "0 imported, every insert failed".
+    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred`
+    if (skipped.length > 0) {
+      console.error(summary, skipped)
+    } else {
+      console.log(summary)
     }
 
-    res.json({
-      name: productData.name || '',
-      price: productData.offers?.price ?? '',
-      description: productData.description || '',
-      image_url: Array.isArray(productData.image) ? productData.image[0] : productData.image || '',
-      category: CATEGORY_MAP[productData.category] || 'Top',
-      size: productData.size || '',
-      external_url: parsedUrl.toString()
-    })
+    res.json({ imported, skipped, deferred })
   } catch (err) {
-    console.error('Product import error:', err)
-    res.status(500).json({ error: '상품 정보를 가져오지 못했습니다' })
+    if (err instanceof FruitsImportError) {
+      console.error(`FruitsFamily sync aborted (${err.status}): ${err.message}`)
+      return res.status(err.status).json({ error: err.message })
+    }
+    console.error('FruitsFamily sync error:', err)
+    res.status(500).json({ error: '동기화에 실패했습니다' })
   }
 })
 

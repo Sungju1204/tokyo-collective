@@ -10,10 +10,10 @@ const error = ref(null)
 const selectedCategory = ref(null)
 
 const filteredProducts = computed(() => {
-  if (selectedCategory.value === null) {
-    return products.value
-  }
-  return products.value.filter(product => product.category === selectedCategory.value)
+  const filtered = selectedCategory.value === null
+    ? products.value
+    : products.value.filter(product => product.category === selectedCategory.value)
+  return [...filtered].sort((a, b) => Number(a.soldOut) - Number(b.soldOut))
 })
 
 const fetchProducts = async () => {

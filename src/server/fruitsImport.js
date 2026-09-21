@@ -89,6 +89,10 @@ export async function fetchProductFromFruits(urlString) {
   // listings don't carry it and absence shouldn't block a sale.
   const availability = String(productData.offers?.availability || '').toLowerCase()
   const available = !availability.includes('soldout') && !availability.includes('outofstock')
+  // `available` defaults to true when the field is absent, which is fine for a
+  // brand-new listing but not as proof that a sold item is back. Callers that
+  // restock must also require the field to have been present.
+  const availabilityKnown = availability !== ''
 
   return {
     name: productData.name || '',
@@ -98,6 +102,7 @@ export async function fetchProductFromFruits(urlString) {
     category: CATEGORY_MAP[productData.category] || 'Top',
     size: productData.size || '',
     available,
+    availabilityKnown,
     external_url: parsedUrl.toString()
   }
 }

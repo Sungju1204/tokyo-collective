@@ -3,13 +3,14 @@ import { syncAvailability } from './syncAvailability.js'
 
 const FF = 'https://fruitsfamily.com/product'
 
-function makeDeps({ rows, fetchProduct, markSoldOut, markInStock, deleteProduct } = {}) {
+function makeDeps({ rows, fetchProduct, markSoldOut, markInStock, deleteProduct, updateDetails } = {}) {
   return {
     listLinked: vi.fn(async () => rows),
     fetchProduct: fetchProduct ?? vi.fn(async () => ({ available: true, availabilityKnown: true })),
     markSoldOut: markSoldOut ?? vi.fn(async () => {}),
     markInStock: markInStock ?? vi.fn(async () => {}),
-    deleteProduct: deleteProduct ?? vi.fn(async () => {})
+    deleteProduct: deleteProduct ?? vi.fn(async () => {}),
+    updateDetails: updateDetails ?? vi.fn(async () => {})
   }
 }
 
@@ -20,8 +21,8 @@ function fetchError(gone, message = 'page failed') {
   return Object.assign(new Error(message), { gone })
 }
 
-const inStock = (id, extra = {}) => ({ id, name: `P${id}`, external_url: `${FF}/id${id}/x`, inStock: true, ...extra })
-const soldOut = (id, extra = {}) => ({ id, name: `P${id}`, external_url: `${FF}/id${id}/x`, inStock: false, ...extra })
+const inStock = (id, extra = {}) => ({ id, name: `P${id}`, price: 1000, external_url: `${FF}/id${id}/x`, inStock: true, ...extra })
+const soldOut = (id, extra = {}) => ({ id, name: `P${id}`, price: 1000, external_url: `${FF}/id${id}/x`, inStock: false, ...extra })
 
 describe('syncAvailability: selling out', () => {
   it('marks an in-stock product sold out when FruitsFamily reports it unavailable', async () => {
@@ -310,5 +311,171 @@ describe('syncAvailability: deleting removed listings', () => {
 
     expect(deps.deleteProduct).not.toHaveBeenCalled()
     expect(result.deleted).toEqual([])
+  })
+})
+
+describe('syncAvailability: syncing name and price', () => {
+  // FruitsFamily is the source of truth for a linked product's name and price.
+  // Only changed, valid values are written; anything unusable is left alone so a
+  // page-format change can never blank a name or zero a price.
+  const page = (over = {}) => ({ available: true, availabilityKnown: true, name: 'P1', price: '1000', ...over })
+  const fetching = over => vi.fn(async () => page(over))
+
+  it('updates the name when it differs', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching({ name: '새 이름' }) })
+
+    const result = await syncAvailability(deps)
+
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { name: '새 이름' })
+    expect(result.updated).toEqual([
+      { id: 1, name: '새 이름', changes: { name: { from: 'P1', to: '새 이름' } } }
+    ])
+  })
+
+  it('updates the price when it differs, reading FruitsFamily\'s string price as a number', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching({ price: '120000' }) })
+
+    const result = await syncAvailability(deps)
+
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { price: 120000 })
+    expect(result.updated[0].changes).toEqual({ price: { from: 1000, to: 120000 } })
+  })
+
+  it('updates both in one call when both differ', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching({ name: 'N', price: '5000' }) })
+
+    await syncAvailability(deps)
+
+    expect(deps.updateDetails).toHaveBeenCalledTimes(1)
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { name: 'N', price: 5000 })
+  })
+
+  it('writes nothing when name and price already match (string vs number price)', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching() })
+
+    const result = await syncAvailability(deps)
+
+    expect(deps.updateDetails).not.toHaveBeenCalled()
+    expect(result.updated).toEqual([])
+  })
+
+  it.each([
+    ['empty', ''],
+    ['blank', '   '],
+    ['missing', undefined]
+  ])('ignores a %s name from FruitsFamily', async (_label, name) => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching({ name }) })
+
+    await syncAvailability(deps)
+
+    expect(deps.updateDetails).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['empty', ''],
+    ['zero', '0'],
+    ['negative', '-500'],
+    ['not a number', 'abc'],
+    ['missing', undefined]
+  ])('ignores a %s price from FruitsFamily', async (_label, price) => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching({ price }) })
+
+    await syncAvailability(deps)
+
+    expect(deps.updateDetails).not.toHaveBeenCalled()
+  })
+
+  it('still updates a valid name when the price is unusable', async () => {
+    const deps = makeDeps({ rows: [inStock(1)], fetchProduct: fetching({ name: '새 이름', price: '0' }) })
+
+    await syncAvailability(deps)
+
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { name: '새 이름' })
+  })
+
+  it('never updates a product whose page could not be read', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1)],
+      fetchProduct: vi.fn(async () => {
+        throw new Error('timeout')
+      })
+    })
+
+    await syncAvailability(deps)
+
+    expect(deps.updateDetails).not.toHaveBeenCalled()
+  })
+
+  it('updates sold-out products too', async () => {
+    const deps = makeDeps({
+      rows: [soldOut(1)],
+      fetchProduct: fetching({ available: false, name: '새 이름' })
+    })
+
+    await syncAvailability(deps)
+
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { name: '새 이름' })
+  })
+
+  it('applies a sell-out and a name change to the same product in one run', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1)],
+      fetchProduct: fetching({ available: false, name: '새 이름' })
+    })
+
+    const result = await syncAvailability(deps)
+
+    expect(deps.markSoldOut).toHaveBeenCalledWith(1)
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { name: '새 이름' })
+    expect(result.soldOut).toHaveLength(1)
+    expect(result.updated).toHaveLength(1)
+  })
+
+  it('does not let a failed name update undo the sell-out (and vice versa)', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1)],
+      fetchProduct: fetching({ available: false, name: '새 이름' }),
+      updateDetails: vi.fn(async () => {
+        throw new Error('db down')
+      })
+    })
+
+    const result = await syncAvailability(deps)
+
+    expect(result.soldOut).toEqual([{ id: 1, name: 'P1' }])
+    expect(result.updated).toEqual([])
+    expect(result.skipped[0].reason).toBe('db down')
+  })
+
+  it('still updates the name when the sell-out write for the same product fails', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1)],
+      fetchProduct: fetching({ available: false, name: '새 이름' }),
+      markSoldOut: vi.fn(async () => {
+        throw new Error('db down')
+      })
+    })
+
+    const result = await syncAvailability(deps)
+
+    expect(result.soldOut).toEqual([])
+    expect(result.updated).toHaveLength(1)
+    expect(deps.updateDetails).toHaveBeenCalledWith(1, { name: '새 이름' })
+    expect(result.skipped[0].reason).toBe('db down')
+  })
+
+  it('reports a failed database update as skipped, not as updated', async () => {
+    const deps = makeDeps({
+      rows: [inStock(1)],
+      fetchProduct: fetching({ name: '새 이름' }),
+      updateDetails: vi.fn(async () => {
+        throw new Error('db down')
+      })
+    })
+
+    const result = await syncAvailability(deps)
+
+    expect(result.updated).toEqual([])
+    expect(result.skipped[0].reason).toBe('db down')
   })
 })

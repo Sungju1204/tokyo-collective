@@ -259,13 +259,13 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
   // Mirror FruitsFamily's sold-out / back-in-stock / removed state onto products
   // we already have. Independent of the import step, so a seller-page parse
   // failure can't block it (it just skips deletions, which need that page).
-  let availability = { soldOut: [], restocked: [], deleted: [], deleteSuppressed: [], skipped: [], unchecked: 0 }
+  let availability = { soldOut: [], restocked: [], deleted: [], deleteSuppressed: [], updated: [], skipped: [], unchecked: 0 }
   try {
     availability = await syncAvailability({
       listedIds: listings ? new Set(listings.map(listing => listing.id)) : undefined,
       listLinked: async () => {
         const rows = await all(
-          `SELECT id, name, external_url,
+          `SELECT id, name, price, external_url,
                   (stock > 0 AND COALESCE(soldOut, 0) != 1) AS inStock
            FROM products WHERE external_url IS NOT NULL ORDER BY id`
         )
@@ -276,7 +276,16 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       // Restocking also clears the legacy soldOut flag, which would otherwise
       // keep the product showing as sold out.
       markInStock: id => run('UPDATE products SET stock = 1, soldOut = 0 WHERE id = ?', [id]),
-      deleteProduct: id => run('DELETE FROM products WHERE id = ?', [id])
+      deleteProduct: id => run('DELETE FROM products WHERE id = ?', [id]),
+      // Columns come from this fixed list, never from the values, so the SQL text
+      // cannot be influenced by anything read off FruitsFamily.
+      updateDetails: (id, values) => {
+        const columns = ['name', 'price'].filter(column => column in values)
+        return run(
+          `UPDATE products SET ${columns.map(column => `${column} = ?`).join(', ')} WHERE id = ?`,
+          [...columns.map(column => values[column]), id]
+        )
+      }
     })
   } catch (err) {
     console.error('FruitsFamily availability sync failed:', err)
@@ -326,11 +335,15 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
 
     // Lands in Vercel's function logs so "0 imported, nothing new" can be told
     // apart from "0 imported, every insert failed".
-    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred, ${availability.soldOut.length} sold out, ${availability.restocked.length} restocked, ${availability.deleted.length} deleted`
+    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred, ${availability.soldOut.length} sold out, ${availability.restocked.length} restocked, ${availability.deleted.length} deleted, ${availability.updated.length} updated`
     // Deleted products are logged by name: the row is gone, so this is the only
     // record of what was removed.
     if (availability.deleted.length > 0) {
       console.warn('FruitsFamily sync deleted products:', availability.deleted)
+    }
+    // Name/price overwrites replace what was stored, so log what they replaced.
+    if (availability.updated.length > 0) {
+      console.warn('FruitsFamily sync updated products:', JSON.stringify(availability.updated))
     }
     if (availability.deleteSuppressed.length > 0) {
       console.error('FruitsFamily sync held back deletions (too many at once):', availability.deleteSuppressed)
@@ -349,6 +362,7 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       restocked: availability.restocked,
       deleted: availability.deleted,
       deleteSuppressed: availability.deleteSuppressed,
+      updated: availability.updated,
       availabilitySkipped: availability.skipped,
       availabilityUnchecked: availability.unchecked
     })

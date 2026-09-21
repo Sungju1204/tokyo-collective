@@ -3,7 +3,7 @@ import cors from 'cors'
 import { createHmac, timingSafeEqual } from 'crypto'
 import db, { initializeDatabase } from './db.js'
 import { fetchProductFromFruits, listNewFruitsListings, extractProductId, FruitsImportError } from './fruitsImport.js'
-import { syncSoldOutStatus } from './syncAvailability.js'
+import { syncAvailability } from './syncAvailability.js'
 
 try {
   process.loadEnvFile()
@@ -245,17 +245,25 @@ const SELLER_URL = 'https://fruitsfamily.com/seller/i9za/joongojoah'
 const MAX_IMPORTS_PER_RUN = 20
 
 app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => {
-  // Sell out products we already have once FruitsFamily has sold them. Runs first
-  // and on its own so a seller-page parse failure below can't block it.
-  let availability = { soldOut: [], skipped: [], unchecked: 0 }
+  // Mirror FruitsFamily's sold-out / back-in-stock state onto products we already
+  // have. Runs first and on its own so a seller-page parse failure below can't
+  // block it.
+  let availability = { soldOut: [], restocked: [], skipped: [], unchecked: 0 }
   try {
-    availability = await syncSoldOutStatus({
-      listInStock: () => all(
-        `SELECT id, name, external_url FROM products
-         WHERE stock > 0 AND COALESCE(soldOut, 0) != 1 AND external_url IS NOT NULL`
-      ),
+    availability = await syncAvailability({
+      listLinked: async () => {
+        const rows = await all(
+          `SELECT id, name, external_url,
+                  (stock > 0 AND COALESCE(soldOut, 0) != 1) AS inStock
+           FROM products WHERE external_url IS NOT NULL ORDER BY id`
+        )
+        return rows.map(row => ({ ...row, inStock: Number(row.inStock) === 1 }))
+      },
       fetchProduct: fetchProductFromFruits,
-      markSoldOut: id => run('UPDATE products SET stock = 0 WHERE id = ?', [id])
+      markSoldOut: id => run('UPDATE products SET stock = 0 WHERE id = ?', [id]),
+      // Restocking also clears the legacy soldOut flag, which would otherwise
+      // keep the product showing as sold out.
+      markInStock: id => run('UPDATE products SET stock = 1, soldOut = 0 WHERE id = ?', [id])
     })
   } catch (err) {
     console.error('FruitsFamily sold-out check failed:', err)
@@ -305,7 +313,7 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
 
     // Lands in Vercel's function logs so "0 imported, nothing new" can be told
     // apart from "0 imported, every insert failed".
-    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred, ${availability.soldOut.length} sold out`
+    const summary = `FruitsFamily sync: ${imported.length} imported, ${skipped.length} skipped, ${deferred} deferred, ${availability.soldOut.length} sold out, ${availability.restocked.length} restocked`
     if (skipped.length > 0 || availability.skipped.length > 0) {
       console.error(summary, { skipped, availabilitySkipped: availability.skipped })
     } else {
@@ -317,14 +325,19 @@ app.post('/api/admin/sync-fruitsfamily', requireSyncSecret, async (req, res) => 
       skipped,
       deferred,
       soldOut: availability.soldOut,
+      restocked: availability.restocked,
       availabilitySkipped: availability.skipped,
       availabilityUnchecked: availability.unchecked
     })
   } catch (err) {
     if (err instanceof FruitsImportError) {
       console.error(`FruitsFamily sync aborted (${err.status}): ${err.message}`)
-      // Sold-out updates above were already applied, so report them anyway.
-      return res.status(err.status).json({ error: err.message, soldOut: availability.soldOut })
+      // Availability updates above were already applied, so report them anyway.
+      return res.status(err.status).json({
+        error: err.message,
+        soldOut: availability.soldOut,
+        restocked: availability.restocked
+      })
     }
     console.error('FruitsFamily sync error:', err)
     res.status(500).json({ error: '동기화에 실패했습니다' })

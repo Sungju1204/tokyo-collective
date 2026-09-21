@@ -96,6 +96,7 @@ describe('fetchProductFromFruits', () => {
       category: 'Outer',
       size: 'L',
       available: true,
+      availabilityKnown: false,
       external_url: 'https://fruitsfamily.com/product/5pijr/name'
     })
   })
@@ -106,6 +107,7 @@ describe('fetchProductFromFruits', () => {
     const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
 
     expect(product.available).toBe(false)
+    expect(product.availabilityKnown).toBe(true)
   })
 
   it('reports available: false when availability says out of stock', async () => {
@@ -122,6 +124,7 @@ describe('fetchProductFromFruits', () => {
     const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
 
     expect(product.available).toBe(true)
+    expect(product.availabilityKnown).toBe(true)
   })
 
   it('defaults to available: true when the availability field is absent', async () => {
@@ -130,6 +133,8 @@ describe('fetchProductFromFruits', () => {
     const product = await fetchProductFromFruits('https://fruitsfamily.com/product/5pijr/name')
 
     expect(product.available).toBe(true)
+    // absent means "unknown", so callers must not treat it as proof of stock
+    expect(product.availabilityKnown).toBe(false)
   })
 
   it('passes an abort signal so a hung connection cannot stall the run', async () => {

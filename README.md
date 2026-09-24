@@ -69,12 +69,6 @@ flowchart LR
 - **테스트**: Vitest
 - **자동화**: GitHub Actions + [cron-job.org](https://cron-job.org) (15분마다 동기화 실행)
 
-## 주요 기능
-
-- **상품 목록 / 장바구니 / 주문**: 결제 연동 없이 주문 정보만 기록합니다. 구매 버튼은 FruitsFamily 원본 상품 페이지로 연결됩니다.
-- **관리자 대시보드** (`/admin/dashboard`): 로그인 후 상품 등록·수정·삭제, 주문 확인, 재고 관리를 할 수 있습니다.
-- **FruitsFamily 자동 동기화**: 15분마다 판매자 페이지를 읽어서 신규 상품 등록, 품절/재입고 반영, 삭제된 상품 제거, 이름·가격 갱신을 자동으로 처리합니다. 자세한 설계는 [`docs/superpowers/specs/`](docs/superpowers/specs) 참고.
-
 ## 시작하기
 
 ### 1. 환경 변수 설정
